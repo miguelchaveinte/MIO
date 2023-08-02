@@ -1,0 +1,75 @@
+model Asignacion
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+uses "random"
+uses "mmsystem"
+
+declarations
+	n=50!numero de tareas
+	m=50!numero de maquinas
+	tareas=1..n
+	maquinas=1..m
+	c:array(maquinas,tareas) of integer
+	x:array(maquinas,tareas) of mpvar
+	y:array(tareas)of integer
+end-declarations
+
+setmtrandseed(12739)!semilla para generar datos aleatorios
+forall(i in maquinas,j in tareas)c(i,j):= round(uniform(20,100))!generar c(i,j)
+
+!Observamos la matriz cij colocada en filas (máquinas) y columnas (tareas), coste maquina*tarea
+!c(i,j)=coste que tiene que la maquina i haga la tarea j
+forall(i in maquinas)do
+writeln
+forall (j in tareas) write (c(i,j), "\t")
+end-do
+	
+
+tiempo1:=gettime 
+
+!Funcion objetivo
+costo_total:= sum(i in maquinas,j in tareas) c(i,j)*x(i,j) !funcion objetivo
+
+!resticciones
+forall(j in tareas)sum(i in maquinas)x(i,j)=1
+forall(i in maquinas) sum(j in tareas)x(i,j)=1
+forall (i in maquinas, j in tareas)x(i,j) is_binary
+
+!Obtengamos solucion optima
+minimize(costo_total)
+
+
+
+
+writeln("Problema de asignacion, n = ",n)
+
+exportprob(EP_MIN,"ejinic",costo_total)!guardar en un fichero de nombre ejinic.lp el modelo completo
+
+!Obtener solucion getobjval
+writeln("Solucion optima es", "\t", getobjval)
+
+!Escribir solucion
+forall(i in maquinas, j in tareas) do
+if(x(i,j).sol>0.9999)  then
+writeln( "La maquina", "\t", i, "\t", "realiza la tarea", "\t", j)
+end-if
+end-do
+
+
+! Cuestión  ¿como puedo ver a que maquina se asigna cada tarea? 
+!Pinchar Solutions
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+forall(i in maquinas, j in tareas) do
+if (x(i,j).sol>0.999) then
+y(j):=i
+end-if
+end-do
+
+!Utilizar la matriz y para miostrar la solucio
+forall (j in tareas) do
+writeln("La tarea", j, "es realizada por la maquina", y(j))
+end-do
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+writeln("Tiempo = ",gettime-tiempo1)
+

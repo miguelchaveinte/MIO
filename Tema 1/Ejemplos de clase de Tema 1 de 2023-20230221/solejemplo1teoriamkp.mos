@@ -1,0 +1,45 @@
+model "mkp"
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+uses "random"
+uses "mmsystem"
+
+
+declarations
+	n=4  !proyectos
+	m=3 !años-periodos segun teoria
+	proyectos=1..n 
+	ayos=1..3 
+	p:array(proyectos)of integer !Resntabilidad
+	b:array(ayos) of real !capital anual
+	a:array(proyectos, ayos) of real !capital por proyecto y año
+	x:array(proyectos) of mpvar
+end-declarations
+
+!Datos
+p::[12, 13, 15,10] !Rentabilidad de cada proyecto
+b::[3.1, 2.5, 0.4]!Capital disponionle por año
+a::[0.5 , 0.3 , 0.2,
+	1, 0.8, 0.2,
+	1.5, 1.5, 0.1,
+	0.1, 0.4, 0.1]
+
+!Funcion objetivo
+rentabilidad_total:=sum(j in proyectos)p(j)*x(j)
+!Restricciones
+forall(i in ayos) sum(j in proyectos)a(j,i)*x(j)<=b(i)
+!Solucion optima
+forall(j in proyectos)x(j) is_binary 
+maximize(rentabilidad_total)
+
+writeln("Ejemplo mochila multidimensional, n = ",n)
+
+exportprob(EP_MAX,"ej1",rentabilidad_total)!Exporta el problema a un fichero "ej1.lp" en formato EP_MAX (LP formato maximizacion)
+
+!Solucion optima
+
+!Escritura de la solucion
+
+
+
+
+end-model

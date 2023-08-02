@@ -1,0 +1,226 @@
+(! Problema mochila 0-1. Tres procedimientos:
+	(1) Solucion optima del modelo con Xpress
+	(2) Solucion heuristica con el metodo greedy con criterio valor/peso
+	(3) Metodo simulated annealing con  intercambios aleatorios 1-1
+	
+
+!)
+
+model"mochila 0-1"
+uses "mmxprs"
+uses "mmsystem"
+ 
+forward procedure heuristica_greedy
+forward procedure intercambio_aleatorio_1_1
+forward procedure simulated_annealing_mochila
+
+		
+declarations
+	n, cap:integer
+	archivo_datos ="datos/gen100_1.txt"
+end-declarations
+
+fopen(archivo_datos,F_INPUT)
+readln(n)
+readln(cap)
+writeln("Problema mochila 0-1, n = ",n,", cap = ",cap)
+writeln("Datos: ",archivo_datos)
+declarations
+	objetos = 1..n
+	valor, peso:array(objetos)of integer
+	i1:integer
+	x:array(objetos)of mpvar
+	
+	! metodo greedy 
+	xsol, y, xmejor, candidato:array(objetos)of integer
+	zheur, ncand, carga:integer
+	g:array(objetos)of real 	! coeficientes greedy
+	jp, kp:integer
+
+    
+    ! parámetros para Simulated Annealing
+	temp_ini = 1600. !Parametro a tanteo
+    alpha = 0.9		! tasa de decrecimiento de la temperatura
+    nfijo = 500		! número fijo de iteraciones fijas antes de cambiar temp
+    tol = 0.001 !cuando la temperatura esta nos baja de esta tolerancia el metodo termina
+    iter_max_sa = 160000
+    temp, ran, pn:real
+    cont, iter:integer		! contador para cambio de temperatura y contador de iteraciones
+    j1, j2, k1, k2:integer
+    
+end-declarations
+
+forall(i in objetos)readln(i,valor(i),peso(i))
+fclose(F_INPUT)
+tiempo1:=gettime
+! Modelo:
+z:=sum(j in objetos)valor(j)*x(j)
+
+rcap:= sum(j in objetos)peso(j)*x(j)<=cap
+
+forall(j in objetos)x(j)is_binary
+
+writeln("\n(1) Solucion optima entera")
+maximize(z)
+writeln("z = ",getobjval,", tiempo = ",strfmt(gettime-tiempo1,8,4))
+
+nsol:=0
+forall(j in objetos|x(j).sol>=0.99)nsol:=nsol+1
+writeln("Numero de objetos en la solucion: ",nsol)
+
+! Algoritmo greedy
+tiempo1:=gettime
+forall(j in objetos)g(j):=valor(j)/peso(j)
+
+heuristica_greedy
+
+writeln("\n(2) Solucion greedy: ",zheur,", tiempo = ",strfmt(gettime-tiempo1,8,4))
+writeln("Numero de objetos en la solucion: ",sum(j in objetos)xsol(j))
+
+zmejor:=zheur
+t1:=gettime
+!============  Heurística Simulated Annealing =================================
+
+writeln("\n(3) Heuristica Simulated Annealing")
+writeln("temp_ini = ",temp_ini,", alpha = ",alpha,", nfijo = ",nfijo)
+
+simulated_annealing_mochila
+
+writeln("\nSolucion final: \nzmejor = ",zmejor,", iter = ",iter,", temp = ",strfmt(temp,8,5),", tiempo = ",strfmt(gettime-t1,5,2))
+
+
+!====================== Procedimientos ==================================
+
+procedure heuristica_greedy
+	
+zheur:=0
+carga:=0
+final:=0
+while(final=0)do
+	ncand:=0
+	forall(j in objetos)candidato(j):=0
+	forall(j in objetos|xsol(j)=0)do
+		if(carga+peso(j)<=cap)then
+			ncand:=ncand+1
+			candidato(j):=1
+		end-if
+	end-do
+	if(ncand=0)then final:=1
+	else	! encontrar el objeto candidato con coeficiente greedy maximo
+		gmax:=-999.
+		forall(j in objetos|candidato(j)=1)do
+			if(g(j)>gmax)then
+				gmax:=g(j)
+				jmax:=j
+			end-if
+		end-do
+		xsol(jmax):=1
+		zheur:=zheur+valor(jmax)
+		carga:=carga+peso(jmax)
+	end-if
+end-do
+end-procedure
+
+!===================================================================
+procedure intercambio_aleatorio_1_1 !OJO: Intercambio 1-1 ALEATORIO
+ 
+ 	! primero guardo los índices con valor 1 y 0
+     
+     n1:=0!Contador de los obejetos que están en la mochila
+     n0:=0!Contador de los obejetos que NO están en la mochila
+     forall(j in objetos)do
+     	if(xsol(j)=1)then
+     		n1:=n1+1
+     		ind1(n1):=j
+     	elif(xsol(j)=0)then
+     		n0:=n0+1
+     		ind0(n0):=j
+     	end-if
+     end-do   
+     
+     fin:=0
+     while(fin = 0)do
+     	jp:=ind1(ceil(random*n1))!Aleatoriamente coges un objeto que está en la mochila
+     	kp:=ind0(ceil(random*n0))!Aleatoriamente coges un objeto que no está en la mochila
+      
+     	! compruebo si el intercambio de objetos es factible
+  		
+		if(carga+peso(kp)-peso(jp)<= cap)then !si la craga alquitar el peso del  objeto que sale 
+		!y añadir el peso del objeto que entra no supera la capacidad de la mochila
+			fin:=1
+			returned:=1!Creo que sobra
+		end-if	
+     end-do
+end-procedure
+
+
+!==================================================================================
+
+procedure simulated_annealing_mochila
+	
+iter:=0
+temp:=temp_ini
+cont:=0
+final:=0
+zmejor:=zheur
+t1:=gettime
+
+while(final=0)do
+     iter:=iter+1
+     cont:=cont+1    
+     ! 1. Solución actual dada con  xsol, zheur, carga
+ 			carga:=sum(j in objetos)peso(j)*xsol(j)
+     		zheur:=sum(j in objetos)valor(j)*xsol(j)
+     ! 2. Elijo al azar una solución en el entorno de la actual y hago el intercambio
+     
+    intercambio_aleatorio_1_1
+    !entra en la mochila el objeto kp y sale de la mochila el objeto jp
+    
+  	! 3. cambio el valor de la mochila a la  la nueva solución
+    zheur1:=zheur+valor(kp)-valor(jp)
+	
+	if(zheur1 > zheur)then !La solucion del intercambio mejora la solucion
+	!por tanto hago el intercambio de objetos en la mochila
+		xsol(jp):=0
+		xsol(kp):=1
+		carga:=carga+peso(kp)-peso(jp)!Actualizo la carga con los objetos que están en la mochila
+	
+		if(zheur1 > zmejor)then !Si el valor es mejor que el valor de alguna de las iteraciones anteriores
+		!me quedo con esa como mejor solución
+        	zmejor:=zheur1
+        	xmejor:=xsol
+        	writeln("\nIteracion ",iter,", zheur = ",zheur1)
+        	cont:=0
+    	end-if
+	else !La solucion del intercambio  aleatorio es factible pero NO mejora la solucion	  
+		!    cont es el	contador para cambio de temperatura
+
+    	if(cont <= nfijo)then ! nfijo = 500	número fijo de iteraciones fijas antes de cambiar temp
+        	ran:=random !Genero un valor de la uniforme (0,1)
+        	pn:=exp(-(zheur-zheur1)/temp)!probabilidad de aceptar la entrada del objeto
+        	!aunque empeore el valor de la mochila
+  
+        	if(ran < pn)then		! aunque la solucion es peor, hago el cambio con esta probalilidad que va decreciendo
+     			xsol(jp):=0
+				xsol(kp):=1
+				carga:=carga+peso(jp)-peso(kp)
+        	end-if
+        		!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+     	else ! aquí se ha llegado al límite de iteraciones (plateau) y se reinicia otro ciclo
+        		temp:=alpha*temp !cambio la temperatura con la realción geométrica
+        		cont:=0 !al cambiar la temperatura reinicio el contador
+     	end-if
+     end-if
+    
+     if(iter > iter_max_sa or temp < tol)then ! tol = 0.001 cuando la temperatura esta nos baja de esta tolerancia
+     ! el metodo termina
+    !el metodo termina si iter> iter_max_sa = 160000
+       final:=1
+     end-if
+     
+  end-do ! final de while(final=0)
+end-procedure
+
+
+
+end-model

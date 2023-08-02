@@ -1,0 +1,164 @@
+model "Problema de Asignacion Clásico. Método greedy aleatorizado con RCL (Lista restringida de candidatos)"
+uses "mmxprs"; 
+uses "mmsystem"
+
+declarations
+	!datos = "datos/matriz_15X15_1.txt"
+		datos = "matriz_30X30.txt"
+	n:integer
+end-declarations
+fopen(datos,F_INPUT)
+read(n)
+declarations
+	tareas = 1..n
+	maquinas = 1..n
+	c:array(tareas,maquinas) of integer
+	x:array(tareas,maquinas) of mpvar
+	
+	tasign:array(tareas)of integer
+    masign:array(maquinas)of integer
+	ntasign:integer
+	y:array(tareas)of integer
+	asignmin:array(tareas)of integer
+	cmin, nmin,zmin, r:integer
+	
+	marca:array(tareas,maquinas)of integer
+	
+	N = 10	! número de arranques
+	K = 3   ! tamaño máximo de la lista de candidatos RCL
+	nK:integer	! tamaño actual o real de la lista de candidatos, siempre <= K
+	indi, indj:array(1..K)of integer
+end-declarations
+
+
+forall(i in tareas,j in maquinas)read(c(i,j))
+fclose(F_INPUT)
+
+!Observamos la matriz cij colocada en filas (máquinas) y columnas (tareas), coste maquina*tarea
+forall(i in maquinas)do
+	writeln
+	forall(j in tareas) write (c(i,j),"\t")
+end-do
+
+!===================MODELO===============================
+forall(i in tareas,j in maquinas)x(i,j) is_binary
+
+forall(i in tareas)res_asigna1(i):= 
+	sum(j in maquinas)x(i,j)=1
+
+forall(j in maquinas)res2(j):=sum(i in tareas)x(i,j)=1
+	
+
+obj:=sum(i in tareas,j in maquinas)c(i,j)*x(i,j)
+
+writeln("Problema de asignacion clasico, n = ",n)
+writeln("Datos: ",datos)
+minimize(obj)!solución optima OJO que no siempre es obtenible
+
+exportprob(EP_MIN,"ejemploclase22febrero",obj)
+
+writeln("\n\n(1) Solucion optima")
+writeln("valor objetivo = ",getobjval)
+z_optimo:=getobjval
+
+!Asignacion de tareas a máquinas optima
+forall(j in maquinas)do
+	write("\nMaquina ",j," -> tarea ")
+	forall(i in tareas)if(x(i,j).sol>=0.999)then write(" ",i);end-if
+end-do
+
+!!!!!!!!!!!!!!!!!!METODO GREEDY ALEATORIZADO!!!!!!!!!!!!!!!
+!Ejercicio: Modificar el programa para saber en que arranque-iteracion 
+!se alcanza la mejor solucion con el metodo greedy aleatorizado
+
+writeln("\n(2) Metodo greedy aleatorizado con RCL = ",K,"  y ",N," arranques\n")
+t1:=gettime
+
+zmin:=99999
+
+
+forall(iter in 1..N)do !Coges iteración 1 y obtienes solución
+!Coges iteración y obtienes solución y comparas con la 1
+!En cada iteración obtienes una solucion (el coste de asignacion es menor) que te quedas con ella si es mejor
+!que todas las anteriores
+	writeln("\n***Arranque =", iter)
+   	ntasign:=0 !Inicializas el numero de tareas asignadas  a 0
+   	!Inicializamos los indicadores de si los candidatos son de la RCL y si son parte de la solucion
+   	forall(j in tareas)tasign(j):=0
+   	forall(i in maquinas)masign(i):=0
+   	zgreedy:=0 !Si no hay ninguna asignacion de maquina a tarea el coste es 0
+   	
+   	while(ntasign < n)do  !Mientras no alcancemos la asignacion de todas las tareas a todas las maquinas
+   	!Metodo GRASP; Seleccionamos de manera aleatoria un elemento de la lista de K candidatos
+   	! que pasa a la solucion, sustituimos el elemento elegido aleatoriamente de la lista por otro
+   	!  hasta volver a tener K candidatos, escogemos aleatoriamente uno y continuamos
+   	
+   	
+   	! Construimos la lista restringida de candidatos RCL :
+   		forall(i in maquinas ,j in tareas |tasign(j)=0 and masign(i)=0)marca(i,j):=0
+   		
+   		nK:=0
+      	forall(t in 1..K)do !Escogemos las K asignaciones con costes cij minimos, siempre que sea posible
+      						! si no lo es, guardamos las nK <= K asignaciones
+      	  cmin:=9999
+          forall(i in maquinas ,j in tareas | masign(i)=0 and tasign(j)=0 and marca(i,j)=0)do
+             if( c(i,j)<cmin)then
+            	cmin:=c(i,j)
+            	ik:=i
+            	jk:=j
+             end-if
+          end-do
+          if(cmin < 9999)then  ! aquí hemos conseguido un elemento más para la RCL
+          	nK:=nK+1
+          	indi(nK):=ik !El elemento nK de la RCL esta compuesto por la tarea ik
+          	indj(nK):=jk !El elemento nK de la RCL esta compuesto por la maquina jk
+          	marca(ik,jk):=1!el par ik,jk ya esta en la RCL y no debe ser vuelta a escoger
+          	
+          end-if     
+   	end-do !Terminamos la construcción de la RCL de nK elementos
+   	
+   	write("\nnK = ",nK)
+   	!write("\ntareas que conforman la RCL = ")
+   	!forall(t in 1..nK)write(indi(t)," ")
+   	!write("\nmaquinas que conforman la RCL = ")
+   	!forall(t in 1..nK)write(indj(t)," ")
+   	!writeln("indi = ",indi)!tareas que conforman la RCL
+   	!writeln("indj = ",indj)!maquinas que conforman la RCL
+   
+   
+   	!!!!!OJO si tienes ntasign=n-K ya no puedes conseguir una RCL de K candidatos
+   	
+      	r:=ceil(random*nK)!Seleccionamos aleatoriamente un individuos de entre los nK candidatdos que pasa a la solucion
+   		!Eliges aleatoriamente una asignacion maquina-tarea de la RCL
+      	tasign(indj(r)):=1 !tarea de la solucion
+      	masign(indi(r)):=1 !maquina asignada a la tarea de la solucion
+      	ntasign:=ntasign+1 !continuamos haciendo asignaciones hasta n asignaciones
+      	y(indj(r)):=indi(r)!Tarea indi(r) asignada a maquina indj(r) 
+      	zgreedy:=zgreedy+c(indi(r),indj(r))
+      	write(", numero de tareas asignadas = ", ntasign)
+      	!writeln("tareas que conforman la RCL = ",indi)
+   		!writeln("maquinas que conforman la RCL = ",indj)
+      	writeln("  Tarea asignada -> maquina ",indi(r),"->",indj(r),", coste = ",c(indi(r),indj(r)))
+      
+   	end-do !Cerramos el numero de asignaciones de tareas a maquinas hasta que todas estén asignadas
+   	writeln("Solucion en la iteracion(arranque) ",iter," coste= ",zgreedy) 
+   	!forall(j in maquinas)writeln("\nMaquina ",j," -> tarea ",y(j))
+    !writeln("Coste de la asignacion en la iteracion  =",iter," coste= ",zgreedy)
+   
+   
+  if(zgreedy < zmin)then !Si en la iteracion el coste de la asignacion zgreedy es menor
+  ! que el coste con la asignacion actual zmin, pasa a ser la nueva solucion
+      zmin:=zgreedy
+      forall(i in tareas)asignmin(i):=y(i)
+  end-if
+	
+end-do !Cerramos el numero de iteraciones N
+
+  forall(i in tareas)write("\nMejor solucion:Tarea ",i," -> maquina ",asignmin(i))
+
+writeln("\nMejor solucion: z = ",zmin)
+
+writeln("Tiempo = ",gettime-t1," segundos")
+
+end-model
+

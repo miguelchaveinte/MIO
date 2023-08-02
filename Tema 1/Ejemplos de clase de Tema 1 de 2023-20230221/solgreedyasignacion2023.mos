@@ -1,0 +1,76 @@
+model "asignacion greedy"
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+uses "random"
+uses "mmsystem"
+
+declarations
+n=50! numero de tareas y maquinas
+tareas=1..n
+maquinas=1..n! numero de maquinas
+c: array (maquinas, tareas) of integer
+ta: array(tareas) of integer
+ma: array(maquinas) of integer
+  y: array(tareas) of integer
+  x:array(maquinas, tareas) of mpvar
+	cmin, nta, zgreedy, imin, jmin:integer! nta número de tareas asignadas
+end-declarations
+setmtrandseed(12739)!Generamos todos los mismos datos
+forall (i in maquinas, j in tareas)c(i,j):= round(uniform(20,100))
+tiempo1:=gettime 
+
+forall(i in maquinas)do
+	writeln
+	forall(j in tareas) write (c(i,j),"\t")
+end-do
+
+!Solucion optima
+costo_total:=sum(i in maquinas,j in tareas)c(i,j)*x(i,j)
+
+forall(i in maquinas)
+	sum(j in tareas)x(i,j)=1
+	
+forall(j in tareas)sum(i in maquinas)x(i,j)=1
+
+! No es necesario
+forall(i in maquinas,j in tareas)x(i,j)is_binary
+
+minimize(costo_total)
+
+!Algoritmo greedy
+forall(i in maquinas) ma(i):=0
+forall(j in tareas) ta(j):=0
+nta:=0
+zgreedy:=0
+!Hasta que no tengamos las n asiganciones de tarea a maquina buscamios el coste minimo y con ese coste decidimos la asignacion de mauina a tarea
+while (nta<n) do
+cmin:=9999999
+
+forall(i in maquinas, j in tareas | ta(j)=0 and ma(i)=0)do
+if (c(i,j)<cmin) then
+cmin:=c(i,j)
+imin:=i
+jmin:=j
+end-if
+end-do
+ma(imin):=1
+ta(jmin):=1
+y(jmin):=imin
+zgreedy:=zgreedy+c(imin, jmin)
+nta:=nta+1
+end-do
+
+
+	
+
+
+writeln("Tiempo = ",strfmt(gettime-tiempo1,10,6))
+
+!Asignacion propuesta por la solucion greedy
+forall(j in maquinas) do
+writeln ("La maquina", "\t", j , "\t","realiza la tarea", "\t", y(j))
+end-do
+
+writeln("\n\nCosto greedy = ",zgreedy)
+writeln("Solucion optima =", getobjval)
+
+end-model

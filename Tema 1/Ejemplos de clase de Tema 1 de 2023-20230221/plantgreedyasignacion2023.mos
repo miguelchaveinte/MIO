@@ -1,0 +1,30 @@
+model asignaciongreedy
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+uses "random"
+uses "mmsystem"
+
+declarations
+n=500! numero de tareas y maquinas
+tareas=1..n
+maquinas=1..n! numero de maquinas
+c: array (maquinas, tareas) of integer
+
+ta: array(tareas) of integer
+ma: array(maquinas) of integer
+ 
+ y: array(tareas) of integer
+	cmin, nta, zgreedy, imin, jmin:integer! nta número de tareas asignadas
+
+end-declarations
+setmtrandseed(12739)!Generamos todos los mismos datos
+forall (i in maquinas, j in tareas)c(i,j):= round(uniform(20,100))
+tiempo1:=gettime 
+
+!Algoritmo greedy
+
+	
+
+writeln("\n\nCosto greedy = ",zgreedy)
+writeln("Tiempo = ",strfmt(gettime-tiempo1,10,6))
+
+end-model

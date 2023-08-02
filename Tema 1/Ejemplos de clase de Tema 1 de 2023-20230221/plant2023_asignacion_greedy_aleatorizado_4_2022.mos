@@ -1,0 +1,102 @@
+model "Problema de Asignacion Clásico. Método greedy aleatorizado con RCL (Lista restringida de candidatos)"
+uses "mmxprs"; 
+uses "mmsystem"
+
+declarations
+	!datos = "datos/matriz_15X15_1.txt"
+		datos = "matriz_30X30.txt"
+	n:integer
+end-declarations
+fopen(datos,F_INPUT)
+read(n)
+declarations
+	tareas = 1..n
+	maquinas = 1..n
+	c:array(tareas,maquinas) of integer
+	x:array(tareas,maquinas) of mpvar
+	
+	tasign:array(tareas)of integer
+    masign:array(maquinas)of integer
+	ntasign:integer
+	y:array(tareas)of integer
+	asignmin:array(tareas)of integer
+	cmin, nmin,zmin, r:integer
+	
+	marca:array(tareas,maquinas)of integer
+	
+	N = 10	! número de arranques
+	K = 3   ! tamaño máximo de la lista de candidatos RCL
+	nK:integer	! tamaño actual o real de la lista de candidatos, siempre <= K
+	indi, indj:array(1..K)of integer
+end-declarations
+
+
+forall(i in tareas,j in maquinas)read(c(i,j))
+fclose(F_INPUT)
+
+!Observamos la matriz cij colocada en filas (máquinas) y columnas (tareas), coste maquina*tarea
+forall(i in maquinas)do
+	writeln
+	forall(j in tareas) write (c(i,j),"\t")
+end-do
+
+!===================MODELO===============================
+forall(i in tareas,j in maquinas)x(i,j) is_binary
+
+forall(i in tareas)res_asigna1(i):= 
+	sum(j in maquinas)x(i,j)=1
+
+forall(j in maquinas)res2(j):=sum(i in tareas)x(i,j)=1
+	
+
+obj:=sum(i in tareas,j in maquinas)c(i,j)*x(i,j)
+
+writeln("Problema de asignacion clasico, n = ",n)
+writeln("Datos: ",datos)
+minimize(obj)!solución optima OJO que no siempre es obtenible
+
+exportprob(EP_MIN,"ejemploclase22febrero",obj)
+
+writeln("\n\n(1) Solucion optima")
+writeln("valor objetivo = ",getobjval)
+z_optimo:=getobjval
+
+!Asignacion de tareas a máquinas optima
+forall(j in maquinas)do
+	write("\nMaquina ",j," -> tarea ")
+	forall(i in tareas)if(x(i,j).sol>=0.999)then write(" ",i);end-if
+end-do
+
+!!!!!!!!!!!!!!!!!!METODO GREEDY ALEATORIZADO!!!!!!!!!!!!!!!
+!Ejercicio: Modificar el programa para saber en que arranque-iteracion 
+!se alcanza la mejor solucion con el metodo greedy aleatorizado
+
+writeln("\n(2) Metodo greedy aleatorizado con RCL = ",K,"  y ",N," arranques\n")
+t1:=gettime
+
+zmin:=99999!para quedarmnos con la iteracion de menor coste
+
+
+forall(iter in 1..N)do !Coges iteración 1 y obtienes solución
+
+
+!Costruir la lista de k candidatos con menor coste
+
+!Escoger alatoriamente una asignaciomn de la lsita y seguir hasta tener las n asignaciones
+
+ !Eliminarle y restaurar la lista de candidatos
+
+!Encontrara la solucion de la iteracion correspondiente
+
+!Si la iteracion produce una solucion mejor que las anteriores nos quedamos con ella
+	
+end-do !Cerramos el numero de iteraciones N
+
+  forall(i in tareas)write("\nMejor solucion:Tarea ",i," -> maquina ",asignmin(i))
+
+writeln("\nMejor solucion: z = ",zmin)
+
+writeln("Tiempo = ",gettime-t1," segundos")
+
+end-model
+

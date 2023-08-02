@@ -1,0 +1,199 @@
+(! Problema mochila 0-1. Tres procedimientos:
+	(1) Solucion optima del modelo con Xpress
+	(2) Solucion heuristica con el metodo greedy con criterio valor/peso
+	(3) Metodo de mejora estocastica
+	!)
+
+model"mochila 0-1"
+uses "mmxprs"
+uses "mmsystem"
+ 
+forward procedure heuristica_greedy
+forward procedure intercambio_aleatorio_1_1
+forward procedure mejora_estocastica_mochila
+	
+
+		
+declarations
+	n, cap:integer
+	archivo_datos ="datos/gen100_1.txt"
+end-declarations
+
+fopen(archivo_datos,F_INPUT)
+readln(n)!Posibles elementos a meter en la mochiña
+readln(cap)!Capacidad de la mochila
+writeln("Problema mochila 0-1, n = ",n,", cap = ",cap)
+writeln("Datos: ",archivo_datos)
+declarations
+	objetos = 1..n
+	valor, peso:array(objetos)of integer
+	i1:integer
+	x:array(objetos)of mpvar
+	
+	! parametros para metodo greedy 
+	xsol, y, xmejor, candidato:array(objetos)of integer
+	zheur, ncand, carga:integer
+	g:array(objetos)of real 	! coeficientes greedy
+	
+	! parámetros para mejora estocastica
+    nfracasos, iter:integer !contadores del numero de fracasos y del numero de iteraciones
+    iter_max = 5000	! máximo numero de iteraciones sin mejora
+    ip, jp, kp, n1, n0, error:integer
+    ind1, ind0:array(objetos)of integer
+end-declarations
+
+forall(i in objetos)readln(i,valor(i),peso(i))!Para cada una de las n-filas del fichero orden del elemento-valor-peso
+fclose(F_INPUT)
+tiempo1:=gettime
+
+! Modelo:
+z:=sum(j in objetos)valor(j)*x(j)
+
+rcap:= sum(j in objetos)peso(j)*x(j)<=cap
+
+forall(j in objetos)x(j)is_binary
+
+writeln("\n(1) Solucion optima entera")
+maximize(z)
+writeln("z = ",getobjval,", tiempo = ",strfmt(gettime-tiempo1,8,4))
+
+nsol:=0
+forall(j in objetos|x(j).sol>=0.99)nsol:=nsol+1
+writeln("Numero de objetos en la solucion: ",nsol)
+
+! Algoritmo greedy
+tiempo1:=gettime
+forall(j in objetos)g(j):=valor(j)/peso(j)!Criterio greedy
+
+heuristica_greedy
+
+writeln("\n(2) Solucion greedy: ",zheur,", tiempo = ",strfmt(gettime-tiempo1,8,4))
+writeln("Numero de objetos en la solucion: ",sum(j in objetos)xsol(j))
+
+!zmejor:=-9999
+zmejor:=zheur
+!======================================================================
+
+t1:=gettime
+writeln("\n(3) Algoritmo de mejora estocastica, iter_max_me =  ",iter_max)
+
+mejora_estocastica_mochila
+
+writeln("\nSolucion final: \nzmejor = ",zmejor,", iter = ",iter,", tiempo = ",strfmt(gettime-t1,5,2))
+
+
+!====================== Procedimientos ==================================
+
+procedure heuristica_greedy
+	
+zheur:=0
+carga:=0
+final:=0
+while(final=0)do !Comprobamos los candidatos que pueden ser metidos en la mochila
+!Si algun candidato tiene de peso mayor que la cap es eliminado
+	ncand:=0
+	forall(j in objetos)candidato(j):=0
+	forall(j in objetos|xsol(j)=0)do
+		if(carga+peso(j)<=cap)then
+			ncand:=ncand+1
+			candidato(j):=1
+		end-if
+	end-do
+	if(ncand=0)then final:=1 !si todos los candidadtos exceden en peso a la cap
+	else	! encontrar el objeto candidato con coeficiente greedy maximo
+		gmax:=-999.
+		forall(j in objetos|candidato(j)=1)do
+			if(g(j)>gmax)then !g es el criterio greedy
+				gmax:=g(j)
+				jmax:=j
+			end-if
+		end-do
+		xsol(jmax):=1
+		zheur:=zheur+valor(jmax)
+		carga:=carga+peso(jmax)
+	end-if
+end-do
+end-procedure
+
+!===================================================================
+procedure intercambio_aleatorio_1_1
+ 
+ 	! primero guardo los índices con valor 1 y 0
+     n1:=0
+     n0:=0
+     forall(j in objetos)do
+     	if(xsol(j)=1)then
+     		n1:=n1+1
+     		ind1(n1):=j
+     	elif(xsol(j)=0)then
+     		n0:=n0+1
+     		ind0(n0):=j
+     	end-if
+     end-do   
+     
+     fin:=0
+     while(fin = 0)do
+     	jp:=ind1(ceil(random*n1))!Tomo aleatoriamente un objeto que está en la mochila
+     	kp:=ind0(ceil(random*n0))!Tomo aleatoriamente un objeto que no está en la mochila
+      
+     	! compruebo si el intercambio laeatorio es factible
+  		
+		if(carga+peso(kp)-peso(jp)<= cap)then
+			fin:=1
+			returned:=1
+		end-if	
+     end-do
+end-procedure
+
+!================================================================
+
+procedure mejora_estocastica_mochila
+
+zmejor:=zheur !Valor de la mochila con la solucion greedy
+xmejor:=xsol !objetos que entran en la mochila con la solucion greedy
+
+final:=0 !Cuando pase a 1 paramos la metaheuristica
+iter:=0 !contador de iteraciones
+nfracasos:=0 !contador del numero de fracasos
+
+while(final=0)do
+     iter:=iter+1
+   
+     ! 1. parto de la solución actual dada con: xsol, carga, zheur
+ 
+     ! 2. Elijo al azar una solución en el entorno de la actual y hago el intercambio
+    
+     intercambio_aleatorio_1_1
+    
+  	! 3. examino el valor de la  la nueva solución 
+    
+	
+	zheur1:=zheur+valor(kp)-valor(jp)
+	
+	if(zheur1 > zheur)then 	! hago el intercambio porque el valor con el intercambio aumenta
+		xsol(jp):=0 !Saco de la mochila el objeto jp
+		xsol(kp):=1 !Meto en la mochila el objeto kp
+		zheur:=zheur1 !Actulizo el valor de la mochila
+		carga:=carga+peso(kp)-peso(jp) !Actulaizo el peso de la mochila
+			zmejor:=zheur
+        	xmejor:=xsol
+        	writeln("\nIteracion ",iter,", zheur = ",zheur)
+		nfracasos:=0 !Cuando se hace el intercambio actuualizamos el numero de fracasos a 0
+				
+	else
+    	nfracasos:=nfracasos+1 
+	end-if	
+		
+	!writeln("  nfracasos = ",nfracasos,", final = ",final)
+	if(nfracasos = iter_max)then 
+		final:=1
+	end-if
+	
+  end-do ! final de while(final=0)
+end-procedure
+
+!==================================================================================
+
+
+
+end-model

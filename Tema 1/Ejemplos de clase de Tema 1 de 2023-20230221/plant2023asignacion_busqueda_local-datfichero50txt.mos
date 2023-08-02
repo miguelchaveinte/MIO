@@ -1,0 +1,122 @@
+model ModelName
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+uses "random"
+uses "mmsystem"
+
+forward procedure mejora_2_intercambios
+forward procedure mejora_3_intercambios
+	
+declarations
+	n :integer
+	archivo_datos = "matriz_50x50.txt"
+end-declarations
+fopen(archivo_datos,F_INPUT) ! abrir archivo para lectura
+read(n)
+declarations
+	tareas=1..n
+	maquinas = 1..n
+	
+	c:array(maquinas,tareas)of integer
+	x:array(maquinas,tareas)of mpvar
+end-declarations
+
+forall(i in maquinas,j in tareas)read(c(i,j))
+fclose(F_INPUT)
+
+!!!!!!! Sacar la matriz cij colocada en filas y columnas y verla
+forall(i in maquinas)do
+	writeln
+	forall(j in tareas) write (c(i,j),"\t")
+end-do
+
+writeln("c = ",c)
+
+tiempo1:=gettime 
+
+costo_total:=sum(i in maquinas,j in tareas)c(i,j)*x(i,j)
+
+forall(i in maquinas)
+	sum(j in tareas)x(i,j)=1
+	
+forall(j in tareas)sum(i in maquinas)x(i,j)=1
+
+! No es necesario
+forall(i in maquinas,j in tareas)x(i,j)is_binary
+
+writeln("Problema de asignacion, n = ",n)
+
+!exportprob(EP_MIN,"as",costo_total)
+
+minimize(costo_total)
+
+writeln("Costo minimo = ",getobjval)
+writeln("Tiempo = ",gettime-tiempo1)
+!=============  Algoritmo Greedy ================
+declarations
+	y, ta:array(tareas)of integer  ! máquina asignada a cada tarea
+	ma:array(maquinas)of integer
+	nta, zgreedy, imin, jmin:integer	! número de tareas asignadas
+end-declarations
+tiempo1:=gettime
+nta:=0
+zheur:=0
+while(nta < n)do
+	! etapa principal del método greedy:
+	cmin:=99999
+	forall(i in maquinas,j in tareas|ta(j)=0 and ma(i)=0)do
+		if(c(i,j)<cmin)then
+			cmin:=c(i,j)
+			imin:=i
+			jmin:=j
+		end-if
+	end-do
+	ma(imin):=1
+	ta(jmin):=1
+	nta:=nta+1
+	y(jmin):=imin
+	zheur:=zheur+c(imin,jmin)
+end-do
+
+writeln("\n\nCosto greedy = ",zheur)
+writeln("Tiempo = ",strfmt(gettime-tiempo1,10,6))
+tiempo1:=gettime
+! Algoritmo de busqueda local con entornos N2 (2-intercambios)
+writeln("\n\nBusqueda local con 2-intercambios\n")
+mejora_2_intercambios
+
+! Algoritmo de busqueda local con entornos N3 (3-intercambios)
+
+writeln("\n\nBusqueda local con 3-intercambios\n")
+mejora_3_intercambios
+
+
+
+writeln("\nValor final = ",zheur)
+writeln("tiempo = ",strfmt(gettime-tiempo1,10,8))
+
+!!!!!!!!!!!!!EJERCICIO  REALIZAR PROCEDURE DOS INTERCAMBIOS!!!!!!!!!!!
+
+!===== procedimientos y funciones ======================
+procedure mejora_2_intercambios
+final:=0
+iter:=0
+mejoramax:=-9999
+
+	
+end-procedure
+
+procedure mejora_3_intercambios
+
+final:=0
+iter:=0
+while(final=0)do
+	! solucion actual viene dada por y() y zheur
+	iter:=iter+1
+	mejora_max:=-999
+	
+		
+end-do
+	
+end-procedure
+
+end-model

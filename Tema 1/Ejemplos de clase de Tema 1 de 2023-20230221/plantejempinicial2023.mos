@@ -1,0 +1,42 @@
+model ModelName
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+uses "random"
+uses "mmsystem"
+
+declarations
+	
+end-declarations
+
+setmtrandseed(12739)!semilla para generar datos aleatorios
+forall(i in maquinas,j in tareas)c(i,j):= round(uniform(20,100))!generar c(i,j)
+
+!Observamos la matriz cij colocada en filas (máquinas) y columnas (tareas), coste maquina*tarea
+!c(i,j)=coste que tiene que la maquina i haga la tarea j
+
+	
+
+tiempo1:=gettime 
+
+costo_total:= sum(i in maquinas,j in tareas) c(i,j)*x(i,j) !funcion objetivo
+
+!resticciones
+
+
+
+
+writeln("Problema de asignacion, n = ",n)
+
+exportprob(EP_MIN,"ejinic",costo_total)!guardar en un fichero de nombre ejinic.lp el modelo completo
+
+!Obtener solucion getobjval
+
+!Escribir solucion
+
+
+! Cuestión  ¿como puedo ver a que maquina se asigna cada tarea? 
+!Pinchar Solutions
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+writeln("Tiempo = ",gettime-tiempo1)
+

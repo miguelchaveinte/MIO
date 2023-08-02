@@ -1,0 +1,38 @@
+model "mkp"
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+uses "random"
+uses "mmsystem"
+
+
+declarations
+	n  !proyectos
+	m !años-periodos segun teoria
+	proyectos 
+	ayos 
+	!beneficios
+	 !capital anual
+	 !capital por proyecto y año
+	
+end-declarations
+
+!Datos
+
+!Funcion objetivo
+
+!Restricciones
+
+
+
+
+writeln("Ejemplo mochila multidimensional, n = ",n)
+
+exportprob(EP_MAX,"ej1",rentabilidad_total)!Exporta el problema a un fichero "ej1.lp" en formato EP_MAX (LP formato maximizacion)
+
+!Solucion optima
+
+!Escritura de la solucion
+
+
+
+
+end-model

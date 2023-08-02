@@ -1,0 +1,214 @@
+(! Problema mochila 0-1. Tres procedimientos:
+	(1) Solucion optima del modelo con Xpress
+	(2) Solucion heuristica con el metodo greedy con criterio valor/peso
+	
+	(3) Metodo Trheshold Acceptying
+	
+!)
+
+model"mochila 0-1"
+uses "mmxprs"
+uses "mmsystem"
+ 
+forward procedure heuristica_greedy
+forward procedure intercambio_aleatorio_1_1
+
+forward procedure threshold_accepting_mochila_2
+
+declarations
+	n, cap:integer
+	archivo_datos ="datos/gen100_1.txt"
+end-declarations
+
+fopen(archivo_datos,F_INPUT)
+readln(n)
+readln(cap)
+writeln("Problema mochila 0-1, n = ",n,", cap = ",cap)
+writeln("Datos: ",archivo_datos)
+declarations
+	objetos = 1..n
+	valor, peso:array(objetos)of integer
+	i1:integer
+	x:array(objetos)of mpvar
+	
+	! metodo greedy 
+	xsol, y, xmejor, candidato:array(objetos)of integer
+	zheur, ncand, carga, iter:integer
+	g:array(objetos)of real 	! coeficientes greedy
+    
+    jp, kp:integer
+    ! parámetros para Threshold Accepting
+	
+    thr:real	
+    
+      alpha_ta = 0.95			! factor de decrecimiento del umbral
+   	thrmax = 200.			! umbral máximo inicial
+   	thrmin = 0.001
+   	N = 800					! número fijo de iteraciones  para cada valor del umbral   
+end-declarations
+
+forall(i in objetos)readln(i,valor(i),peso(i))
+fclose(F_INPUT)
+tiempo1:=gettime
+! Modelo:
+z:=sum(j in objetos)valor(j)*x(j)
+
+rcap:= sum(j in objetos)peso(j)*x(j)<=cap
+
+forall(j in objetos)x(j)is_binary
+
+writeln("\n(1) Solucion optima entera")
+maximize(z)
+writeln("z = ",getobjval,", tiempo = ",strfmt(gettime-tiempo1,8,4))
+
+nsol:=0
+forall(j in objetos|x(j).sol>=0.99)nsol:=nsol+1
+writeln("Numero de objetos en la solucion: ",nsol)
+
+! Algoritmo greedy
+tiempo1:=gettime
+forall(j in objetos)g(j):=valor(j)/peso(j)
+
+heuristica_greedy
+
+writeln("\n(2) Solucion greedy: ",zheur,", tiempo = ",strfmt(gettime-tiempo1,8,4))
+writeln("Numero de objetos en la solucion: ",sum(j in objetos)xsol(j))
+
+!zmejor:=-9999
+zmejor:=zheur
+!======================================================================
+
+t1:=gettime
+
+
+  
+!============  Heurística Threhold Accepting =================================
+
+writeln("\n(3) Heuristica Threhold Accepting N = ",N)
+writeln("thrmax = ",thrmax,", alpha = ",alpha_ta)
+
+threshold_accepting_mochila_2
+
+writeln("\nSolucion final: \nzheur = ",zheur,", iter = ",iter,", thr = ",thr)
+writeln("\nSolucion mejor: \nzheur = ",zmejor)
+writeln("tiempo = ",strfmt(gettime-tiempo1,5,2))
+
+
+!====================== Procedimientos ==================================
+
+procedure heuristica_greedy
+	
+zheur:=0
+carga:=0
+final:=0
+while(final=0)do
+	ncand:=0
+	forall(j in objetos)candidato(j):=0
+	forall(j in objetos|xsol(j)=0)do
+		if(carga+peso(j)<=cap)then
+			ncand:=ncand+1
+			candidato(j):=1
+		end-if
+	end-do
+	if(ncand=0)then final:=1
+	else	! encontar el objeto candidato con coeficiente greedy maximo
+		gmax:=-999.
+		forall(j in objetos|candidato(j)=1)do
+			if(g(j)>gmax)then
+				gmax:=g(j)
+				jmax:=j
+			end-if
+		end-do
+		xsol(jmax):=1
+		zheur:=zheur+valor(jmax)
+		carga:=carga+peso(jmax)
+	end-if
+end-do
+end-procedure
+
+!===================================================================
+procedure intercambio_aleatorio_1_1
+ 
+ 	! primero guardo los índices con valor 1 y 0
+     
+     n1:=0
+     n0:=0
+     forall(j in objetos)do
+     	if(xsol(j)=1)then
+     		n1:=n1+1
+     		ind1(n1):=j
+     	elif(xsol(j)=0)then
+     		n0:=n0+1
+     		ind0(n0):=j
+     	end-if
+     end-do   
+     
+     fin:=0
+     while(fin = 0)do
+     	jp:=ind1(ceil(random*n1))
+     	kp:=ind0(ceil(random*n0))
+      
+     	! compruebo si el intercambio es factible
+  		
+		if(carga+peso(kp)-peso(jp)<= cap)then
+			fin:=1
+			returned:=1
+		end-if	
+     end-do
+end-procedure
+
+
+!===============================================================
+
+!================================================================================
+procedure threshold_accepting_mochila_2
+	
+iter:=0
+final:=0
+zmejor:=zheur
+writeln("z inicial: ",zmejor)
+tiempo1:=gettime
+thr:= thrmax
+while(final = 0)do
+	forall(it in 1..N)do !N = 800	número fijo de iteraciones  para cada valor del umbral   
+     iter:=iter+1
+    
+     ! 1. calculo el coste de la solución actual xsol
+ 
+     ! 2. Elijo al azar una solución en el entorno de la actual y hago el intercambio
+     ! primero guardo los índices con valor 1 y 0
+     
+     intercambio_aleatorio_1_1
+    
+  	! 3. examino el valor de l amochila con el movimiento a  la nueva solución
+  	
+	 zheur1:=zheur+valor(kp)-valor(jp)
+  	
+    !writeln("\nIteración ",iter,", zheur = ",strfmt(zheur,10,2))
+    !writeln("\n zheur2 = ",strfmt(zheur2,10,2))
+  
+     if(zheur1 >zheur-thr)then
+     	xsol(jp):=0
+		xsol(kp):=1
+		carga:=carga+peso(kp)-peso(jp)
+		zheur:=zheur1
+		if(zheur1 > zmejor)then 
+        	zmejor:=zheur1        
+        	writeln("\nIteracion ",iter,", zheur = ",zheur1,", thr = ",thr)
+     	end-if
+     end-if
+    
+	end-do	! final de 	forall(it in 1..N)  N = 800	número fijo de iteraciones  para cada valor del umbral 
+	
+	thr:=thr*alpha_ta !cambiamos el umbral
+	
+	if(thr < thrmin)then
+		final:=1
+	end-if
+  end-do ! final del while
+end-procedure
+
+
+
+
+end-model

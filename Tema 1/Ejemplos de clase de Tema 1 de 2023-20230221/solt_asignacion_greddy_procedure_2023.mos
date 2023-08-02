@@ -1,0 +1,90 @@
+(! Problema de Asignacion Clasico. Metodo greedy 
+	!)
+
+model "Asignacion Greedy"
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+uses "random"
+uses "mmsystem"
+
+forward procedure heur_greedy
+	
+declarations
+	n :integer
+	!archivo_datos = "assign100.txt"!solo solucion greedy por tamaño!!
+	archivo_datos = "matriz_50x50.txt"
+end-declarations
+fopen(archivo_datos,F_INPUT) ! abrir archivo para lectura
+read(n)
+declarations
+	tareas=1..n
+	maquinas = 1..n
+	
+	c:array(maquinas,tareas)of integer
+	y, ta:array(tareas)of integer  ! maquina asignada a cada tarea
+	ma:array(maquinas)of integer
+	nta, zheur, imin, jmin:integer						! numero de tareas asignadas
+	
+end-declarations
+
+forall(i in maquinas,j in tareas)read(c(i,j))
+fclose(F_INPUT)
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+
+
+writeln("Problema de asignacion, n = ",n)
+
+
+!!!!!!!!!!La única solución es aproximada en datos assig100.txt!!!!!!!!!!!!!
+!=============  Algoritmo Greedy ================
+tiempo1:=gettime
+
+heur_greedy !Obtener la solucion greddy utilizando  procedure heur_greedy
+
+!Asignacion greedy de tarea a maquina en orden 
+writeln("Asignacion greedy de tarea a maquina:")
+forall(j in tareas)do
+	writeln
+	 write ("tarea ", j, "   maquina ", y(j),"\t")
+end-do
+writeln("\n\nCosto greedy = ",zheur)
+writeln("Tiempo = ",strfmt(gettime-tiempo1,10,6))
+
+tiempo1:=gettime
+
+
+writeln("\nValor final = ",zheur)
+writeln("tiempo = ",strfmt(gettime-tiempo1,10,8))
+
+!================ procedimientos y funciones ======================
+
+procedure heur_greedy
+!Algoritmo greedy
+forall(i in maquinas) ma(i):=0
+forall(j in tareas) ta(j):=0
+nta:=0
+zheur:=0
+!Hasta que no tengamos las n asiganciones de tarea a maquina buscamios el coste minimo y con ese coste decidimos la asignacion de mauina a tarea
+while (nta<n) do
+cmin:=9999999
+
+forall(i in maquinas, j in tareas | ta(j)=0 and ma(i)=0)do
+if (c(i,j)<cmin) then
+cmin:=c(i,j)
+imin:=i
+jmin:=j
+end-if
+end-do
+ma(imin):=1
+ta(jmin):=1
+y(jmin):=imin
+zheur:=zheur+c(imin, jmin)
+nta:=nta+1
+end-do
+
+end-procedure
+!===================================================================
+
+end-model
