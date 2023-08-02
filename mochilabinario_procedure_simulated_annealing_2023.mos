@@ -1,0 +1,326 @@
+!@encoding CP1252
+model ModelName
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+
+procedure threshold_accepting_mochila_2
+
+iter:=0
+final:=0
+zmejor:=zheur
+writeln("z inicial: ",zmejor)
+tiempo1:=gettime
+thr:= thrmax
+while(final = 0)do
+forall(it in 1..N)do !N = 800 n?mero fijo de iteraciones para cada valor del umbral
+iter:=iter+1
+
+! 1. calculo el coste de la soluci?n actual xsol
+
+! 2. Elijo al azar una soluci?n en el entorno de la actual y hago el intercambio
+! primero guardo los ?ndices con valor 1 y 0
+
+intercambio_aleatorio_1_1
+
+! 3. examino el valor de l amochila con el movimiento a la nueva soluci?n
+
+zheur1:=zheur+valor(kp)-valor(jp)
+
+!writeln("\nIteraci?n ",iter,", zheur = ",strfmt(zheur,10,2))
+!writeln("\n zheur2 = ",strfmt(zheur2,10,2))
+
+if(zheur1 >zheur-thr)then
+xsol(jp):=0
+xsol(kp):=1
+carga:=carga+peso(kp)-peso(jp)
+zheur:=zheur1
+if(zheur1 > zmejor)then
+zmejor:=zheur1
+writeln("\nIteracion ",iter,", zheur = ",zheur1,", thr = ",thr)
+end-if
+end-if
+
+end-do ! final de forall(it in 1..N) N = 800 n?mero fijo de iteraciones para cada valor del umbral
+
+thr:=thr*alpha_ta !cambiamos el umbral
+
+if(thr < thrmin)then
+final:=1
+end-if
+end-do ! final del while
+end-procedure
+
+
+procedure heuristica_greedy_mochila
+
+zheur:=0
+carga:=0
+final:=0
+while(final=0)do !Comprobamos los candidatos que pueden ser metidos en la mochila
+!Si algun candidato tiene de peso mayor que la cap es eliminado
+ncand:=0
+forall(j in objetos)candidato(j):=0
+forall(j in objetos|xsol(j)=0)do
+if(carga+peso(j)<=cap)then
+ncand:=ncand+1
+candidato(j):=1
+end-if
+end-do
+if(ncand=0)then final:=1 !si todos los candidadtos exceden en peso a la cap
+else ! encontrar el objeto candidato con coeficiente greedy maximo
+gmax:=-999.
+forall(j in objetos|candidato(j)=1)do
+if(g(j)>gmax)then !g es el criterio greedy
+gmax:=g(j)
+jmax:=j
+end-if
+end-do
+xsol(jmax):=1
+zheur:=zheur+valor(jmax)
+carga:=carga+peso(jmax)
+end-if
+end-do
+end-procedure
+
+
+
+!!!!!!!!!!!!!!!!!!METODO GREEDY ALEATORIZADO!!!!!!!!!!!!!!!
+zmin:=99999
+
+
+forall(iter in 1..N)do !Coges iteraci?n 1 y obtienes soluci?n
+!Coges iteraci?n y obtienes soluci?n y comparas con la 1
+!En cada iteraci?n obtienes una solucion (el coste de asignacion es menor) que te quedas con ella si es mejor
+!que todas las anteriores
+writeln("\n***Arranque =", iter)
+ntasign:=0 !Inicializas el numero de tareas asignadas a 0
+!Inicializamos los indicadores de si los candidatos son de la RCL y si son parte de la solucion
+forall(j in tareas)tasign(j):=0
+forall(i in maquinas)masign(i):=0
+zgreedy:=0 !Si no hay ninguna asignacion de maquina a tarea el coste es 0
+
+while(ntasign < n)do !Mientras no alcancemos la asignacion de todas las tareas a todas las maquinas
+!Metodo GRASP; Seleccionamos de manera aleatoria un elemento de la lista de K candidatos
+! que pasa a la solucion, sustituimos el elemento elegido aleatoriamente de la lista por otro
+! hasta volver a tener K candidatos, escogemos aleatoriamente uno y continuamos
+
+
+! Construimos la lista restringida de candidatos RCL :
+forall(i in maquinas ,j in tareas |tasign(j)=0 and masign(i)=0)marca(i,j):=0
+
+nK:=0
+forall(t in 1..K)do !Escogemos las K asignaciones con costes cij minimos, siempre que sea posible
+! si no lo es, guardamos las nK <= K asignaciones
+cmin:=9999
+forall(i in maquinas ,j in tareas | masign(i)=0 and tasign(j)=0 and marca(i,j)=0)do
+if( c(i,j) cmin:=c(i,j)
+ik:=i
+jk:=j
+end-if
+end-do
+if(cmin < 9999)then ! aqu? hemos conseguido un elemento m?s para la RCL
+nK:=nK+1
+indi(nK):=ik !El elemento nK de la RCL esta compuesto por la tarea ik
+indj(nK):=jk !El elemento nK de la RCL esta compuesto por la maquina jk
+marca(ik,jk):=1!el par ik,jk ya esta en la RCL y no debe ser vuelta a escoger
+
+end-if
+end-do !Terminamos la construcci?n de la RCL de nK elementos
+
+write("\nnK = ",nK)
+!write("\ntareas que conforman la RCL = ")
+!forall(t in 1..nK)write(indi(t)," ")
+!write("\nmaquinas que conforman la RCL = ")
+!forall(t in 1..nK)write(indj(t)," ")
+!writeln("indi = ",indi)!tareas que conforman la RCL
+!writeln("indj = ",indj)!maquinas que conforman la RCL
+
+
+!!!!!OJO si tienes ntasign=n-K ya no puedes conseguir una RCL de K candidatos
+
+r:=ceil(random*nK)!Seleccionamos aleatoriamente un individuos de entre los nK candidatdos que pasa a la solucion
+!Eliges aleatoriamente una asignacion maquina-tarea de la RCL
+tasign(indj(r)):=1 !tarea de la solucion
+masign(indi(r)):=1 !maquina asignada a la tarea de la solucion
+ntasign:=ntasign+1 !continuamos haciendo asignaciones hasta n asignaciones
+y(indj(r)):=indi(r)!Tarea indi(r) asignada a maquina indj(r)
+zgreedy:=zgreedy+c(indi(r),indj(r))
+write(", numero de tareas asignadas = ", ntasign)
+!writeln("tareas que conforman la RCL = ",indi)
+!writeln("maquinas que conforman la RCL = ",indj)
+writeln(" Tarea asignada -> maquina ",indi(r),"->",indj(r),", coste = ",c(indi(r),indj(r)))
+
+end-do !Cerramos el numero de asignaciones de tareas a maquinas hasta que todas est?n asignadas
+writeln("Solucion en la iteracion(arranque) ",iter," coste= ",zgreedy)
+!forall(j in maquinas)writeln("\nMaquina ",j," -> tarea ",y(j))
+!writeln("Coste de la asignacion en la iteracion =",iter," coste= ",zgreedy)
+
+
+if(zgreedy < zmin)then !Si en la iteracion el coste de la asignacion zgreedy es menor
+! que el coste con la asignacion actual zmin, pasa a ser la nueva solucion
+zmin:=zgreedy
+forall(i in tareas)asignmin(i):=y(i)
+end-if
+
+end-do !Cerramos el numero de iteraciones N
+
+
+procedure mejora_3_intercambios
+
+final:=0
+iter:=0
+while(final=0)do
+! solucion actual viene dada por y() y zheur
+iter:=iter+1
+mejora_max:=-999
+
+forall(j1,j2,j3 in tareas |j1<>j2 and j1<>j3 and j2<>j3) do
+i1:=y(j1)
+i2:=y(j2)
+i3:=y(j3)
+
+mejora1:=c(i1,j1)+c(i2,j2)+c(i3,j3)-(c(i3,j1)+c(i1,j2)+c(i2,j3))!Caso 1
+mejora2:=c(i1,j1)+c(i2,j2)+c(i3,j3)-(c(i2,j1)+c(i3,j2)+c(i1,j3))!Caso 2
+mejora:=maxlist(mejora1, mejora2)
+if (mejora>mejora_max) then
+j1max:=j1
+j2max:=j2
+j3max:=j3
+mejora_max:=mejora
+if (mejora=mejora1)then
+caso:=1
+else
+caso:=2
+end-if
+end-if
+end-do
+
+if (mejora_max<=0)then
+final:=1
+else
+if (caso=1) then
+temp:=y(j1max)
+y(j1max):=y(j3max)
+y(j3max):=y(j2max)
+y(j2max):=temp
+else
+temp:=y(j1max)
+y(j1max):=y(j2max)
+y(j2max):=y(j3max)
+y(j3max):=temp
+end-if
+zheur:=zheur-mejora_max
+end-if
+
+writeln("iter","\t", iter,"\t", "zheur","\t", zheur)
+end-do !while
+
+end-procedure
+
+procedure heuristica_grasp
+
+zmax :=-9999
+
+forall(iter in 1..N) do
+forall(j  in objetos)xsol(j) :=0 ! body...
+zheur:=0
+carga:=0
+final:=0
+while(final=0)do
+	ncand:=0
+	forall(j in objetos)candidato(j):=0
+	forall(j in objetos|xsol(j)=0)do ! Observamos cuantos candidatos de los que no han entrado en la mochila puyeden entar al a?adr su peso no exceden su carga
+
+		if(carga+peso(j)<=cap)then
+			ncand:=ncand+1
+			candidato(j):=1
+		end-if
+	end-do
+	if(ncand=0)then final:=1
+	else	! encontrar la RCL
+		forall(j in objetos|candidato(j)=1)marca(j):=0
+		forall(t  in 1..K) do
+		gmax:=-999.
+		forall(j in objetos|candidato(j)=1 and marca(j) =0)do
+			if(g(j)>gmax)then
+				gmax:=g(j)
+				jmax:=j
+			end-if
+		end-do
+			ind(t) := jmax
+			marca(jmax):= 1
+		end-do
+		tk:= ceil(K*random)
+		jmax := ind(tk)
+		xsol(jmax):=1
+		zheur:=zheur+valor(jmax)
+		carga:=carga+peso(jmax)
+	end-if
+end-do
+intercambio_1_1 ! A?adimos busqueda local
+if(zheur >zmax) then
+	zmax:= zheur
+	xsolmax:= xsol
+end-if
+
+end-do
+end-procedure
+
+procedure intercambio_1_1
+
+	fin:= 0
+
+	while(fin = 0) do
+	mejora_max :=-999
+	forall(i,j in objetos|xsol(i)=1 and xsol(j)=0) do
+
+		if(carga +peso(j) -peso(i)<= cap) then
+			mejora:= valor(j) -valor(i)
+		end-if
+
+		if(mejora>mejora_max) then
+			mejora_max:=mejora
+			imax:= i
+			jmax:= j
+		end-if
+	end-do
+
+	if(mejora_max <=0) then
+		fin:=1
+
+	else
+		xsol(jmax) :=1
+		xsol(imax) :=0
+		zheur:= zheur +mejora_max
+		carga:= carga +peso(jmax)-peso(imax)
+
+	end-if
+	end-do
+
+
+
+end-procedure
+
+
+
+!Algoritmo greedy
+forall(i in maquinas) ma(i):=0
+forall(j in tareas) ta(j):=0
+nta:=0 !contador asignaciones
+zgreedy:=0
+!Hasta que no tengamos las n asignaciones de tarea a maquinas buscamos el coste minimo y con ese coste decidimos la asignacion de maquina a tarea
+while(nta cmin:=99999999 !valor minimo de comparacion
+forall(i in maquinas,j in tareas | ta(j)=0 and ma(i)=0)do ! el | significa tal que
+if(c(i,j) cmin:=c(i,j)
+imin:=i !guardamos la maquina del minimo que lo haria
+jmin:=j !guardamos la tarea del minimo que lo haria
+end-if
+end-do
+
+ma(imin):=1 !asingamos la tarea para que no la coja el for de nuevo
+ta(jmin):=1 !asitnamos la maquina
+y(jmin):= imin !la tarea jmin la realiza la maquina imin
+!tenemos que actualizar el coste tras la asignacion
+zgreedy:=zgreedy+c(imin,jmin)
+!hay q contabilizar las iteraciones
+nta:=nta+1
+end-do

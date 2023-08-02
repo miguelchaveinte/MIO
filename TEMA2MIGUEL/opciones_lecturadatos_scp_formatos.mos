@@ -1,0 +1,120 @@
+model ModelName
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+
+declarations
+  m,n:integer
+  
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Ejemplo Formato 1!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  !archivo_datos = "datos/berlin52.txt" !Ejemplo Formato 1 coordenadas txt que explicamos:
+  !Todos los puntos de demanda pueden ser puntos de servicio po eso m=n
+  !fila 1 puntos de demanda = puntos de servicio =52
+  !fila 2 Punto de demanda=1 (primera columna) Coordenada X=565 (segunda columna) Coordenada Y=575 (segunda columna) del primer punto de servicio
+  !fila 3  Punto de demanda=2 (primera columna) Coordenada X=25 (segunda columna) Coordenada Y=185 (segunda columna) del primer punto de servicio
+  !...............
+  !formato_datos = 1 !Seleccionamos tipo de fichero de datos Formato 1
+  
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Ejemplo Formato 2!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    archivo_datos = "datos/a10.cyl" !Ejemplo Formato 2 .cyl que explicamos:
+!fila 1 puntos de demanda=132
+!fila 2 puntos de servicio =18
+!filas 3-135 demanda de los 132 puntos de demanda
+!fila 136 columna 1 distancia del punto de demanda 1 al punto de servicio 1
+!fila 136 columna 1 distancia del punto de demanda 1 al punto de servicio 2
+!...............
+
+formato_datos = 2 !Seleccionamos tipo de fichero de datos Formato 2
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Ejemplo Formato 3!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  !archivo_datos = "datos/ambulancias.dat" !Ejemplo Formato 3 disperso OR-library que explicamos:
+  !fila 1 puntos de demanda (20) puntos de servicio (10)
+  !fila 2 costes de los 10 puntos de servicio
+  !fila 3  : numero de columnas (1),  numeros de los servicios (en este caso 1) que atienden la demanda el servicio 2
+  !fila 4: 2 servicios atienden la demanda del punto de demanda 2 que son los servcios  1 y 2
+  !.......
+  !fila 22; 2 servicios atienden la demanda del punto de demanda 19 que son los servcios  9 y 10
+  
+  !formato_datos = 3 !Seleccionamos tipo de fichero de datos Formato 3
+
+end-declarations
+fopen(archivo_datos,F_INPUT)
+if(formato_datos = 1)then	!Formato coordenadas .txt
+	read(n)
+	m:=n
+elif(formato_datos =2)then !Formato .cyl
+	read(m)
+	read(n)
+elif(formato_datos = 3)then !Formato disperso OR-library
+	readln(m,n)
+end-if
+
+declarations
+	pdemanda= 1..m
+	pservicio = 1..n
+	cx, cy:array(pservicio)of integer
+	dist:array(pdemanda,pservicio)of real
+	 nc:array(pdemanda)of integer
+	dem:array(pdemanda)of real
+	costo, col:array(pservicio)of integer
+	a:array(pdemanda,pservicio)of integer
+	! dc = 170 !Formayto 1 
+	!dc = 27 !Formato 2 Ojo a esta distancia de cubrimiento a cambiar según el problema, por ejemplo con datos a10.cyl
+	dc = 170 !Formayto 3
+	x:array(pservicio)of mpvar
+end-declarations
+if(formato_datos = 1)then !Formato coordenadas .txt
+	forall(j in pservicio)read(j,cx(j),cy(j))
+	forall(i in pdemanda,j in pservicio)dist(i,j):=sqrt((cx(i)-cx(j))^2+(cy(i)-cy(j))^2)
+	forall(i in pdemanda,j in pservicio)do
+		if(dist(i,j)<=dc)then
+			a(i,j):=1
+		else
+			a(i,j):=0
+		end-if
+	end-do
+	forall(j in pservicio)costo(j):=1
+elif(formato_datos=2)then !Formato .cyl
+	forall(i in pdemanda)read(dem(i))
+	forall(i in pdemanda,j in pservicio)read(dist(i,j))
+		forall(i in pdemanda,j in pservicio)do
+		if(dist(i,j)<=dc)then
+			a(i,j):=1
+		else
+			a(i,j):=0
+		end-if
+	end-do
+	forall(j in pservicio)costo(j):=1
+elif(formato_datos = 3)then !Formato disperso OR-library
+	forall(j in pservicio)read(costo(j))
+	forall(i in pdemanda)do
+		read(nc(i))
+		forall(j in 1..nc(i))do
+			read(col(j))
+			a(i,col(j)):=1
+		end-do
+	end-do
+end-if
+fclose(F_INPUT)
+
+if(formato_datos = 2)then 
+!!!!!!!!!!!!!!!!!!!!!!!
+	!Comprobamos que la matriz dem(i) está bien cargada
+	write("demandas: ")
+		forall(i in pdemanda)write (dem(i), "; ")
+	!!!!!!!!!!!!!!!!!!!!!
+	
+!!!!!!!!!!!!!!!!!!!!!!!
+	!Comprobamos que la matriz dist(i,j) está bien cargada
+	forall(i in pdemanda )do
+	writeln
+	forall(j in pservicio)write (dist(i,j), "\t")
+	end-do
+!!!!!!!!!!!!!!!!!!!!!
+end-if
+!Comprobamos que la matriz a(i,j) está bien cargada
+forall(i in pdemanda )do
+writeln
+forall(j in pservicio)write (a(i,j))
+end-do
+	
+
+end-model

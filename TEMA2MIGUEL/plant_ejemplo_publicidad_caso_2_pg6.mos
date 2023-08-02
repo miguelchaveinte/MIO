@@ -1,0 +1,58 @@
+! Ejemplo de publicidad: Maximizar la utilidad de forma que a cada región llegue a lo más un periodico
+!!!!!!!!!!!!! caso 2 (Set Packing)!!!!!!!!!!!!!
+
+model "Set Packing"
+uses "mmxprs"; 
+declarations
+	
+  n = 5				! numero de periodicos = puntos de servicio
+  pservicio = 1..n
+  
+  m = 9				! numero de regiones a donde la publicidad del periodico puede llegar
+  !o, en teoria, puntos de demanda
+  pdemanda = 1..m
+  
+  a:array(pservicio,pdemanda)of integer
+  costo, utilidad:array(pservicio)of integer
+  x:array(pservicio)of mpvar
+end-declarations
+
+initializations from 'datos_publicidad_1.dat'
+   a utilidad
+end-initializations
+
+
+!Comprobamos que los costes y la matriz a(j,i) están bien cargadas
+
+!Funcion objetivo
+utilidad_total:=sum(j in pservicio)utilidad(j)*x(j)
+
+
+!Restricciones  cada ! región como mucho tendrá un periódico
+
+forall(i in pdemanda) r(i):=sum(j in pservicio)a(j,i)*x(j)<=1  !es ejemplo de calse para el caso 3 hay que poner igual a 1 .con datos_publicidad_1.dat no sale pero con datos_publicidad_2.dat sale solucion
+forall(j in pservicio) x(j) is_binary
+
+exportprob(EP_MAX,"",utilidad_total)
+
+!Encontrar optimo y escribir solucion
+maximize(utilidad_total)
+forall(j in pservicio)do
+	if(x(j).sol>0.9999)then
+		writeln("En periodico ",j," ponemos publicidad")
+	end-if
+end-do
+
+forall(i in pdemanda,j in pservicio)do
+	if(a(j,i)=1 and x(j).sol>0.9999)then
+		writeln("Region ",i," llega anuncio de periodico ",j)
+	else
+			writeln("Region ",i," NO llega anuncio de periodico ",j)	
+	end-if
+end-do
+	
+
+! Mostrar las regiones que tendrán periodico con y sin anuncio de publicidad
+
+
+end-model

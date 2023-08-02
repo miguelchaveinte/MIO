@@ -1,0 +1,382 @@
+model " Heuristica de Clarke-Wright aleatorizada para CVRP" 
+
+uses "mmsystem"
+uses "mmive"
+
+forward procedure dibujar_rutas(nr:integer, nnr:array(range)of integer, indr:array(range,range)of integer)
+
+
+declarations
+   n:integer
+   m:integer
+   cap:integer
+   nombre:string
+   
+    
+   archivo_datos =  "E072-04f.dat"
+   
+   
+   formato_datos = 2	! =1 datos distancias
+   						! =2 datos coordenadas
+end-declarations
+
+fopen(archivo_datos,F_INPUT)
+
+if(formato_datos = 1)then
+	read(n)
+	read(m)
+elif(formato_datos = 2)then
+	read(nombre)
+	read(n)
+	read(m)
+end-if
+
+declarations
+   puntos = 1..n
+  
+   dist:array(puntos,puntos) of real
+  
+   dem:array(puntos)of integer
+   cx, cy:array(puntos) of integer
+   base = 1
+   rutas = 1..n-1
+   nnr, nnrf:array(rutas)of integer		! número de puntos de cada ruta, excuyendo el nodo 1
+   indr, indrf:array(puntos,rutas)of integer
+   
+  
+  
+   ruta_activa:array(rutas)of integer
+   dist_ruta:array(rutas)of real
+   dist_total:real
+   carga:array(rutas)of integer
+   
+   nra:integer					! número de rutas activas en la solución actual
+   
+   sig:array(puntos,rutas)of integer ! array de siguientes de cada nodo en cada ruta
+    ini:array(rutas) of integer
+   fin:array(rutas) of integer
+   
+   sav:array(puntos,puntos)of real  ! matriz de savings
+   nsav:integer
+   savord:array(range)of real
+   indi:array(range)of integer
+   indj:array(range)of integer
+   marcado:array(puntos,puntos)of integer
+   daux:real
+   
+   N = 20   						! iteraciones aleatorizado
+   K = 3							!tamaño del RCL
+   indrcl:array(1..K)of integer		! índices del RCL en cada paso
+  
+   mejora_tucker = 0 !esto no va aqui no se usa
+    final, jact, t1:integer
+
+   inicial = 1
+   tol = 0.001
+   tini,time1:real
+
+end-declarations
+
+if(formato_datos=1)then
+	forall(i in puntos)do
+  		read(i)
+  		read(dem(i))
+	end-do
+	forall(i in puntos,j in puntos)read(dist(i,j))
+  	read(cap)
+elif(formato_datos=2)then
+  	read(cap)
+  	forall(i in puntos)read(i,cx(i),cy(i))
+  	forall(i in puntos)read(i,dem(i))
+  	forall(i,j in puntos|i<>j)dist(i,j):=sqrt((cx(i)-cx(j))^2+(cy(i)-cy(j))^2)
+end-if	
+forall(i in puntos)dist(i,i):=99999.9
+fclose(F_INPUT)
+
+dem_total:=sum(i in puntos|i<>1)dem(i)
+!====================================== DATOS =============================
+writeln("Problema de routing con capacidades  CVRP, \nn = ",n,", m = ",m)
+writeln("Datos: ",archivo_datos)
+writeln("\Heuristica de Clarke-Wright aleatorizada, con ordenacion de los ahorros")
+
+tini:=gettime
+(!
+writeln("\nMatriz de distancias:\n")
+forall(i in puntos)do
+  writeln
+  forall(j in puntos)write(dist(i,j),"\t")
+end-do
+!)
+writeln("\nCapacidad = ",cap)
+writeln("Minimo número de vehiculos: ",ceil(dem_total/cap))
+writeln("Numero de vehiculos: ",m)
+!============================================================================
+
+! Cálculo de la matriz de ahorros (savings)
+
+forall(i,j in puntos|i<>base and j<>base)sav(i,j):=dist(i,base)+dist(base,j)-dist(i,j)!s(i,j)=d(i,base)+d(base,j)-d(i,j)
+time1:=gettime
+(!
+writeln("\nMatriz de ahorros:\n")
+forall(j in puntos|j>0)write(j,"\t")
+writeln
+forall(i in puntos|i>0 )do
+  write("\n",i,"\t")
+  forall(j in puntos|j>0)write(sav(i,j),"\t")
+end-do
+!)
+
+! Lista ordenada de savings positivos
+nsav:=0
+final:=0
+while(final=0)do
+   nsav:=nsav+1
+   daux:=-9999.
+   forall(i,j in puntos| j>=i and marcado(i,j)=0)do!!i<>base and j<>base and
+      if(sav(i,j)>daux)then
+         daux:=sav(i,j)
+         ik:=i
+         jk:=j
+      end-if   
+   end-do
+   marcado(ik,jk):=1
+   savord(nsav):=daux !se va construyendo la lista d indices con los ahorros ordenados
+   indi(nsav):=ik
+   indj(nsav):=jk
+   if(daux<=0.)then final:=1;end-if
+end-do
+nsav:=nsav-1
+
+writeln("\nSavings ordenados:\n")
+writeln("t\tsav\ti\tj\n")
+forall(t in 1..nsav)
+  writeln(t,"\t",savord(t),"\t",indi(t),"\t",indj(t))
+
+!============================================================================
+
+mejor_dist:=99999.
+
+forall(itergrasp in 1..N)do !aleatorizado N iteraciones
+! Solución inicial (n-1 rutas) unidos todas a la base ida y vuelta
+nra:=0
+dsol:=0.
+forall(i in puntos|i>1)do
+   nra:=nra+1
+   nnr(nra):=2
+   sig(i,nra):=base
+   sig(base,nra):=i
+   ruta_activa(nra):=1
+   carga(nra):=dem(i)
+   ini(nra):=i
+   fin(nra):=i
+   dist_ruta(nra):=dist(base,i)+dist(i,base)
+   dsol:=dsol+dist(base,i)+dist(i,base)
+end-do
+
+!=============================================================================
+! RCL inicial
+forall(k in 1..K)indrcl(k):=k
+ts:=K
+final:=0
+n1:=0;n2:=0;n3:=0;n4:=0
+while(final=0)do
+	!elegir un numjero al al azar entre 0 y k
+   kr:=ceil(random*K)
+   !AUDIO .... es para cuando solo queden 2 o 1 elemento a añadir en la lista
+   !Válido para K=3
+   if(ts=(nsav-1))then 
+   	kr:=ceil(random*(K-1))
+   end-if
+   if(ts=(nsav))then 
+   	kr:=1!ceil(random*(K-2))
+   end-if
+   !writeln(kr)
+   !indrcl(kr):=ts
+   iss:=indi(indrcl(kr))
+   js:=indj(indrcl(kr))   
+   !writeln("sav(",iss,",",js,") = ",sav(iss,js))
+   forall(k1, k2 in rutas| k1<>k2 and ruta_activa(k1)=1 and ruta_activa(k2)=1  )do
+ 
+     if(iss=fin(k2) and js=ini(k1) and carga(k1)+carga(k2)<=cap )then
+       n1:=n1+1
+       !writeln("mezcla de las rutas ",k1," y ",k2,","," caso 1")
+       ruta_activa(k1):=0
+       sig(iss,k2):=js
+       jact:=js
+       fin(k2):=fin(k1)
+       while(jact<>fin(k1))do
+         sig(jact,k2):=sig(jact,k1)
+         jact:=sig(jact,k1)
+       end-do 
+       
+       sig(fin(k2),k2):=1
+       carga(k2):=carga(k1)+carga(k2)
+       nnr(k2):=nnr(k1)+nnr(k2)
+       nra:=nra-1
+
+  
+  
+    elif(iss=ini(k2) and js=fin(k1)  and carga(k1)+carga(k2)<=cap)then 
+        !writeln("mezcla de las rutas ",k1," y ",k2,","," caso 2")
+        n2:=n2+1
+       	ruta_activa(k2):=0
+       	carga(k1):=carga(k1)+carga(k2)
+       	sig(js,k1):=iss
+       	jact:=iss
+		fin(k1):=fin(k2)
+
+       	while(jact<>fin(k2))do
+         	sig(jact,k1):=sig(jact,k2)
+         	jact:=sig(jact,k2)
+       	end-do 
+       	sig(fin(k1),k1):=1
+       	nnr(k1):=nnr(k1)+nnr(k2)
+       	nra:=nra-1
+
+  
+  
+     elif(iss=ini(k2) and js=ini(k1)  and carga(k1)+carga(k2)<=cap )then 
+     	!writeln("mezcla de las rutas ",k1," y ",k2,", caso 3")
+        n3:=n3+1
+       	ruta_activa(k2):=0
+       	carga(k1):=carga(k1)+carga(k2)
+       	sig(iss,k1):=js
+        ini(k1):=fin(k2)
+       	jact:=iss	
+       	while(jact<>fin(k2))do
+       		h:=sig(jact,k2)
+       		sig(h,k1):=jact      	
+         	jact:=h
+       	end-do 
+      sig(fin(k1),k1):=1
+       	nnr(k1):=nnr(k1)+nnr(k2)
+       	nra:=nra-1
+
+  
+  
+  
+    elif(js=fin(k1) and iss=fin(k2) and carga(k1)+carga(k2)<=cap )then		! caso 4:
+       	!writeln("mezcla de las rutas ",k1," y ",k2,", caso 4")
+        n4:=n4+1
+       	ruta_activa(k2):=0
+       	carga(k1):=carga(k1)+carga(k2)
+       	sig(js,k1):=iss
+       	! se cambia el sentodo desde b  hasta is
+       	jact:=1
+       	ini(k1):=fin(k2)!!!
+       	while(jact<>fin(k2))do
+       		h:=sig(jact,k2)
+       		sig(h,k1):=jact
+         	jact:=h
+       	end-do 
+       	sig(ini(k2),k1):=1
+       	nnr(k1):=nnr(k1)+nnr(k2)
+       	nra:=nra-1  
+  
+     end-if
+   end-do
+   
+   ts:=ts+1 !actualizar ts, ya que hemos cogido uno ampliamos la lista para coger el siguiente
+   indrcl(kr):=ts ! meter el nuevo a la lista ... es decir tenemos 7,5,4 y hemos elegiod el 5 al azar... y lo siguiente es 7,5,4,3... y al haber cogido el 5 queda asi 7,3,4
+   if(ts>nsav )then final:=1;end-if
+end-do
+
+!===================== Solución final de la heurística de Clarke and Wright ===================
+
+!writeln("Número de rutas: ",nra)
+nr:=0
+dist_total:=0.  ! distancia total de la ruta
+
+forall(k1 in rutas|ruta_activa(k1)=1)do
+  nr:=nr+1
+  dist_ruta(nr):=0
+  dist_rut:=0.0
+  t1:=1;indr(t1,nr):=1
+  jact:=ini(k1)
+  t1:=t1+1
+  indr(t1,nr):=jact
+  dist_total:=dist_total+dist(1,ini(k1))
+  dist_rut:=dist_rut+dist(1,ini(k1))
+  while(jact<>fin(k1))do
+     dist_total:=dist_total+dist(jact, sig(jact,k1))
+     dist_rut:=dist_rut+dist(jact, sig(jact,k1))
+     jact:=sig(jact,k1)
+     t1:=t1+1
+     indr(t1,nr):=jact
+  end-do
+  dist_total:=dist_total+dist(fin(k1),1)		! para cerrar el recorrido
+  dist_rut:=dist_rut+dist(fin(k1),1)
+  dist_ruta(nr):=dist_rut
+  nnr(nr):=t1
+end-do
+
+writeln("\n\nIndices de cada ruta:") ! Escribimos los índices de cada ruta 
+forall(k in 1..nr)do
+  write("\nruta : ",k,", nnr = ",nnr(k)," => ")
+  forall(t in 1..nnr(k))write(indr(t,k),",")
+  write("  dist = ",dist_ruta(k))
+  writeln
+end-do
+
+
+if(dist_total < mejor_dist)then
+   	mejor_dist:=dist_total
+  	 writeln("iteracion ",itergrasp,", dist = ",mejor_dist)
+  	 nrf:=nr
+
+	forall(k in 1..nr)do
+		nnrf(k):=nnr(k)
+		forall(j in 1..nnr(k))indrf(j,k):=indr(j,k)
+	end-do
+	
+end-if
+
+end-do !fin aleatorizacion
+
+if(formato_datos = 2)then
+	dibujar_rutas(nrf, nnrf, indrf)
+end-if	
+	
+
+writeln("\nSolucion final de la heuristica de Clarke and Wright aleatorizada:")
+writeln("\nDistancia mejor final= ",mejor_dist)
+writeln("Tiempo total = ",gettime-time1)
+writeln("\n\nIndices de cada ruta:") ! Escribimos los índices de cada ruta 
+forall(k in 1..nr)do
+  write("\nruta : ",k,", nnr = ",nnrf(k)," => ")
+  forall(t in 1..nnrf(k))write(indrf(t,k),",")
+
+  writeln
+      write("  dist = ",dist_ruta(k))
+end-do
+
+
+!========================================================================
+!				Funciones y procedimientos
+!========================================================================
+
+!====================================================================
+procedure dibujar_rutas(nr:integer, nnr:array(range)of integer, indr:array(range,range)of integer)
+	
+	id1:=IVEaddplot("puntos",IVE_BLACK)
+	forall(j in puntos)IVEdrawpoint(id1,cx(j),cy(j))
+	
+	
+	colores:={IVE_BLUE, IVE_CYAN, IVE_GREEN, IVE_MAGENTA, IVE_RED, IVE_WHITE, IVE_YELLOW}
+	ncolor:=1
+	forall(k in 1..nr) do
+		id(k):=IVEaddplot("ruta",colores(ncolor))
+		ncolor:=ncolor+1
+		if(ncolor = 7) then
+			ncolor:=1
+		end-if
+	end-do
+	
+	
+	forall(k in 1..nr)do
+		forall(j in 1..nnr(k)-1)IVEdrawline(id(k),cx(indr(j,k)),cy(indr(j,k)),cx(indr(j+1,k)),cy(indr(j+1,k)))
+		IVEdrawline(id(k),cx(indr(nnr(k),k)),cy(indr(nnr(k),k)),cx(indr(1,k)),cy(indr(1,k)))
+	end-do
+	
+end-procedure
+end-model

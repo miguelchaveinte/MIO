@@ -1,0 +1,220 @@
+model CVRP
+	
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+uses "mmsystem"
+uses "mmive"
+
+!forward procedure detallarRuta(xsol:array(range,range) of integer)
+
+!forward procedure dibujarRuta(xsol:array(range,range) of integer)
+
+!COTA Y HUEVO RELATIVO
+
+!HUECO NO COINCIDE CON LA COTA -> NO LLEGAMOS AL MAXIMO
+!CUANDO COINCIDEN NO HAY HUECO Y SE LLEGA A LA SOLUCION REAL 
+! ESCUCHAR AUDIO MOVIL
+
+
+forward procedure dibujar_rutas(nr:integer, nnr:array(range)of integer, indr:array(range,range)of integer)
+!solo funciona con formato 2 la anterior funcion
+
+declarations
+  
+  	!archivo_datos = "eilon_30_3.dat"
+  	!Este fichero solo para la formulacion 2 pq sino peta 
+  	
+  	archivo_datos = "ejemplo_gasoleo.txt"!"ejemplo_gasoleo.txt"!"E072-04f.dat"
+
+	formato_datos = 1	! =1 datos distancias, =2 datos coordenadas Eilon
+	nombre:string
+ 	n,m:integer
+ 	cap:integer 
+end-declarations
+
+fopen(archivo_datos,F_INPUT)
+if(formato_datos = 1)then
+	readln(n)
+	readln(cap)
+elif(formato_datos = 2)then
+	read(nombre)
+	writeln("Problema ",nombre)
+	read(n)!puntos
+	read(m)!numero minimo de vehiculos o demTotal/capacidad
+end-if
+
+declarations
+	puntos = 1..n
+	coches = 1..m
+	cx:array(puntos)of integer
+	cy:array(puntos)of integer
+	dist:array(puntos,puntos)of real
+	dem:array(puntos)of integer 
+	b:array(puntos) of integer
+    x:array(puntos,puntos, coches) of mpvar
+    y:array(puntos, coches) of mpvar
+    u: array(puntos, coches) of mpvar
+    
+    tiempo_calculo = 30 !parte 2 del problema
+    base = 1
+    formulacion = 2	! =1 modelo de Tucker-Miller-Zremlin
+    					! =2 modelo con red auxiliar
+    
+    rutas:range	!de 1 a 3 el rango				
+    nnr:array(rutas)of integer!numero nodos en la ruta
+	nr:integer								! número de rutas activas
+	indr:array(range,rutas)of integer!indices de los nodos en las rutas
+end-declarations
+
+if(formato_datos=1)then
+	forall(i in puntos)readln(dem(i))
+	forall(i,j in puntos)read(dist(i,j))
+	
+elif(formato_datos=2)then
+  	read(cap)
+  	forall(i in puntos)read(i,cx(i),cy(i))
+  	forall(i in puntos)read(i,dem(i))
+  	forall(i,j in puntos|i<>j)dist(i,j):=sqrt((cx(i)-cx(j))^2+(cy(i)-cy(j))^2)
+end-if	
+
+fclose(F_INPUT)
+
+forall(i in puntos)dist(i,i):=9999.9
+dem_total:=sum(i in puntos)dem(i)  ! para calcular el Kmin
+
+writeln("Problema de routing con capacidades  CVRP, \nn = ",n,", m = ",m)
+writeln("Datos: ",archivo_datos)
+writeln("Demanda total: ",dem_total)
+writeln("\nCapacidad = ",cap)
+writeln("Minimo numero de vehiculos: ",ceil(dem_total/cap))
+
+!================================= MODELOS ==================================
+
+if(formulacion = 1) then
+
+	writeln("\nFormulacion de 3 indices basado en Tucker-Miller-Zemlin")
+	objetivo:=sum(i,j in puntos, k in coches)dist(i,j)*x(i,j,k)
+	
+	forall(i in puntos|i<>base)sum(k in coches)y(i,k)=1
+	sum(k in coches)y(1,k)=m
+	
+	!forall(i in puntos)sum(j in puntos)x(i,j)=sum(j in puntos)x(j,i)
+	forall(i in puntos, k in coches)sum(j in puntos)x(i,j,k) = sum(j in puntos)x(j,i,k)
+	forall(i in puntos, k in coches)sum(j in puntos)x(i,j,k) = y(i,k)
+	forall(i,j in puntos, k in coches | i <> base and j <> base and i <> j and dem(i)+dem(j)<=cap)restmz(i,j,k):=
+		 u(i,k)-u(j,k)+cap*x(i,j,k)<=cap-dem(j)
+		 
+	forall(i  in puntos, k in coches|i<>base)dem(i)<=u(i,k)
+	
+	forall(i in puntos, k in coches|i<>base)u(i,k)<=cap
+	
+	forall(i,j in puntos, k in coches)x(i,j,k) is_binary
+	forall(i in puntos, k in coches)y(i,k) is_binary
+	
+	forall(i in puntos, k in coches|i <> base)u(i,k)>=0
+
+
+end-if
+!================================== OPTIMIZACIÓN ==================================
+
+starttime:=gettime
+
+setparam("XPRS_MAXTIME",tiempo_calculo)!delante de minimize
+
+writeln("Calculando...., tiempo limite = ",tiempo_calculo," segundos")
+
+minimize(objetivo)
+
+nvar:= getparam("XPRS_cols") !column view
+nres:= getparam("XPRS_rows") !row view
+writeln("Numero de variables: ",nvar,", numero de restricciones: ",nres)
+mejor_cota:= getparam("XPRS_bestbound")
+nodos_BB:=getparam("XPRS_nodes")
+if(getobjval<>0)then
+       hueco_final:= 100*(getobjval-mejor_cota)/getobjval
+end-if
+
+writeln("\n***Solucion final")
+
+writeln("Valor objetivo (distancia total) = ",getobjval)
+writeln("Mejor cota= ",mejor_cota)
+writeln("Hueco final= ",strfmt(hueco_final,6,2),"%")
+writeln("Nodos examinados = ",nodos_BB) 
+writeln("Tiempo en segundos = ",gettime-starttime,"\n\n")
+
+!================ Salidas con la solución ====================
+
+nr:=0
+forall(i in puntos | x(base,i).sol >=0.9) do
+	nr+=1
+	inicio_ruta(nr):=i
+end-do
+dist_total:=0.	
+forall(k in 1..nr)do	
+	carga_ruta(k):=0
+	dist_ruta(k):=0.
+	indr(1,k):=base
+	!indr(2,k):=inicio_ruta(k)
+	sig:=inicio_ruta(k)!está arriba
+	!nnr(k):=2
+	nnr(k):=1
+	!carga_ruta(k)+=dem(base)+dem(sig)
+	dist_ruta(k)+=dist(base,sig)
+	while(sig <> base)do
+		carga_ruta(k)+=dem(sig)
+		nnr(k)+=1
+		forall(j in puntos | x(sig,j).sol>=0.9)do
+			jj:=j
+		end-do	
+		indr(nnr(k),k):=sig!En (1,1)(2,1),(3,1)....(1,4),(2,4),(3,4) almacena sig
+		dist_ruta(k)+=dist(sig,jj)
+		sig:=jj
+	end-do
+	dist_total+=dist_ruta(k)
+end-do
+
+dist_total:=sum(r in 1..nr)dist_ruta(r)
+writeln("\nDistancia total = ",dist_total)
+writeln("Numero de rutas: ",nr,". Rutas:")
+writeln("\nr\tdist\tcarga\tpuntos\n")
+forall(r in 1..nr)do
+   write("\n",r,"\t",strfmt(dist_ruta(r),6,2),"\t",carga_ruta(r),"\t")
+   forall(i in 1..nnr(r))write(indr(i,r),"-")
+   write("1")
+end-do
+
+if(formato_datos = 2)then
+	dibujar_rutas(nr, nnr, indr)
+end-if
+
+
+!======================================================================
+procedure dibujar_rutas(nr:integer, nnr:array(range)of integer, indr:array(range,range)of integer)
+	
+	id1:=IVEaddplot("puntos",IVE_BLACK)
+	forall(j in puntos)IVEdrawpoint(id1,cx(j),cy(j))
+	
+	
+	colores:={IVE_BLUE, IVE_CYAN, IVE_GREEN, IVE_MAGENTA, IVE_RED, IVE_WHITE, IVE_YELLOW}
+	ncolor:=1
+	forall(k in 1..nr) do
+		id(k):=IVEaddplot("ruta",colores(ncolor))
+		ncolor:=ncolor+1
+		if(ncolor = 7) then
+			ncolor:=1
+		end-if
+	end-do
+	
+	
+	forall(k in 1..nr)do
+		forall(j in 1..nnr(k)-1)IVEdrawline(id(k),cx(indr(j,k)),cy(indr(j,k)),cx(indr(j+1,k)),cy(indr(j+1,k)))
+		IVEdrawline(id(k),cx(indr(nnr(k),k)),cy(indr(nnr(k),k)),cx(indr(1,k)),cy(indr(1,k)))!unir la ultima a primera
+	end-do
+	
+end-procedure
+
+
+end-model
+
+
+
+

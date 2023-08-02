@@ -1,0 +1,257 @@
+(! Plantilla general para la resolucion de problemas de programación de tareas en intrevalos (Interval Scheduling)
+Si problema = 1 se resuelve elprimer problema: maximizar el numero de tareas que pueden
+ejecutarse en un único procesador o máquina. Se resuelve el modelo de programación entera binaria 
+y se aplica el método greedy escogiendo tareas en orden creciente por tiempo de terminacion,
+que en este caso alcanza siempre el óptimo.
+
+Si problema = 2 se resuelve el problema de maximizar el numero de tareas que m pueden ejecutarse
+en m procesadores (hay que especificar el valor de m). No está hecho el método greedy.
+
+Si problema = 3 se resuelve con Xpress el problema de minimizar el número de máquinas
+o procesadores necesartios para ejecutar todas las tareas. No está el método greedy.
+!)
+
+model Interval_scheduling
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+uses "mmsystem";
+forward procedure greedy1
+
+!apartado c -> con el 2 llegamos a ejecutar las 50 tareas (con m=7 )pero no en el mismo orden
+
+declarations
+	datos = "interval_50.txt"
+	problema = 1	!1 - Maximizar tareas con 1 procesador
+					!2 - Maximizar tareas con m procesadores
+					!3 - Mínimo número de procesadores para todas las tareas
+	m = 1 !PARA IS2 !apartado c m=7
+	detallarsol = true
+	exportarsol = false
+end-declarations
+
+entrada := datos
+salida := "soluciones/ " + problema + "." + datos
+
+declarations
+	n: integer
+end-declarations
+
+fopen(entrada,F_INPUT)
+
+read(n)
+
+declarations
+	tareas=1..n
+	maquinas=1..m
+	s, f: array(tareas) of integer
+	x: array(tareas) of mpvar
+	z: array(maquinas, tareas) of mpvar!para el problema IS2, nos dan el numero de maquinas
+	M = n !PARA IS3.. numero suficientemente grande de maquinas
+	maq = 1..M !para is3
+	y: array(maq) of mpvar !para is3
+	w: array(maq, tareas) of mpvar!para el problema IS3, no nos dan el numeor de maquinas, garantiza numero sufiente de maquinas
+end-declarations
+
+forall(j in tareas)read(j,s(j),f(j))
+
+fclose(F_INPUT)
+
+if(exportarsol) then
+	fopen(salida,F_OUTPUT)
+end-if
+
+
+
+
+
+!Imprimir detalles del problema
+writeln("Archivo de datos: ",datos)
+writeln("Tamaño del problema: ",n)
+
+writeln
+writeln("MODELO EXACTO")
+
+!Almacena el instante de tiempo en el que se comienza la ejecución
+tiempo:=gettime
+if(problema = 1) then
+	
+	!funcion objetivo
+	obj:=sum(j in tareas)x(j)
+	
+	!restricciones
+	forall(j,k in tareas| j<>k and s(k)<f(j) and f(k)>s(j)) x(j)+x(k)<=1
+	forall(j in tareas) x(j) is_binary
+		
+	maximize(obj)
+	
+	writeln
+	writeln("Número de variables: ",getparam("XPRS_COLS"))
+	writeln("Número de restricciones: ",getparam("XPRS_ROWS"))
+	!Cota inferior de la solución óptima. Mínimo de todos los valores de la función objetivo obtenidos en la relajacion lineal
+	writeln("Cota inferior: ",getparam("XPRS_BESTBOUND"))
+	!Gap: diferencia (relativa) entre la cota sup. de la solución óptima, i.e. valor de la f.o. en un nodo incumbent
+	!y el best bound o cota inferior de la solucion optima
+	writeln("Hueco relativo: ",100*(getobjval-getparam("XPRS_BESTBOUND"))/(getobjval))
+	
+	
+	writeln("Problema  de encontrar el máximo número de tareas con un sólo procesador")
+	writeln
+	writeln("Se ejecutan ",getobjval," tareas") !si hay prioridades, la suma de la funcion objteivo es la suma de prioridades, no la suma de tares. cambiar write
+	if(detallarsol) then
+		write("Se ejecutan las tareas: ")
+		forall(j in tareas | x(j).sol > 0.99) write(j," ")
+		writeln
+	end-if
+	
+elif (problema = 2) then
+	
+	!funcion objetivo
+	obj:=sum(i in maquinas,j in tareas) z(i,j)
+	
+	!restricciones
+	
+	!cada maquina a lo sumo una tarea
+	forall(j in tareas) sum(i in maquinas) z(i,j)<=1
+	!solapamiento
+	forall(i in maquinas,j in tareas,k in tareas| j<>k and s(k)<f(j) and f(k)>s(j)) z(i,j)+z(i,k)<=1
+	forall(i in maquinas,j in tareas) z(i,j) is_binary
+	
+	maximize(obj)
+	
+	writeln
+	writeln("Número de variables: ",getparam("XPRS_COLS"))
+	writeln("Número de restricciones: ",getparam("XPRS_ROWS"))
+	!Cota inferior de la solución óptima. Mínimo de todos los valores de la función objetivo obtenidos en la relajacion lineal
+	writeln("Cota inferior: ",getparam("XPRS_BESTBOUND"))
+	!Gap: diferencia (relativa) entre la cota sup. de la solución óptima, i.e. valor de la f.o. en un nodo incumbent
+	!y el best bound o cota inferior de la solucion optima
+	writeln("Hueco relativo: ",100*(getobjval-getparam("XPRS_BESTBOUND"))/(getobjval))
+	
+	
+	writeln("Problema  de encontrar el máximo número de tareas con ",m," procesadores")
+	writeln
+	writeln("Se ejecutan ",getobjval," tareas")
+	if(detallarsol) then
+		forall(i in maquinas) do
+			write("En la máquina ",i," se ejecutan: ")
+			forall(j in tareas | z(i,j).sol > 0.99) write(j," ")
+			writeln
+		end-do
+	end-if
+	
+elif (problema = 3) then
+	
+	writeln("Problema de encontrar el mínimo número de procesadores para hacer todas las tareas")
+
+
+	!funcion objetivo
+	obj:=sum(i in maq) y(i)
+	
+	!restricciones
+	
+	!todas las tareas deben ser asignadas
+	forall(j in tareas) sum(i in maq) w(i,j)=1
+	!si una maquinas no se usa,no puede tener tareas asignadas
+	forall(i in maq,j in tareas) w(i,j)<=y(i)
+	!solapamiento
+	forall(i in maq,j in tareas,k in tareas| j<>k and s(k)<f(j) and f(k)>s(j)) w(i,j)+w(i,k)<=1
+	forall(i in maq)y(i) is_binary
+	forall(i in maq,j in tareas) w(i,j) is_binary
+	
+	minimize(obj)
+	
+	
+	writeln
+	writeln("Número de variables: ",getparam("XPRS_COLS"))
+	writeln("Número de restricciones: ",getparam("XPRS_ROWS"))
+	!Cota inferior de la solución óptima. Mínimo de todos los valores de la función objetivo obtenidos en la relajacion lineal
+	writeln("Cota inferior: ",getparam("XPRS_BESTBOUND"))
+	!Gap: diferencia (relativa) entre la cota sup. de la solución óptima, i.e. valor de la f.o. en un nodo incumbent
+	!y el best bound o cota inferior de la solucion optima
+	writeln("Hueco relativo: ",100*(getobjval-getparam("XPRS_BESTBOUND"))/(getobjval))
+	
+	
+	writeln("Se necesitan ",getobjval," procesadores")
+	if(detallarsol)then
+		forall(i in 1..round(getobjval))do
+			write("En la máquina ",i," se ejecutan: ")
+			forall(j in tareas | w(i,j).sol > 0.99) write(j," ")
+			writeln
+		end-do
+	end-if
+	
+
+end-if
+
+declarations
+	xsol:array(tareas) of integer	
+end-declarations
+
+
+if(problema = 1) then
+
+	writeln
+	!Heurística Greedy
+	writeln
+	writeln("MÉTODO GREEDY")
+
+	!Esta heurística devuelve los resultados en un array llamado xsol
+	greedy1
+	
+	numTareas:=sum(j in tareas)xsol(j)
+	writeln("Se ejecutan ",numTareas," tareas")
+	if(detallarsol) then
+		write("Se ejecutan las tareas: ")
+		forall(j in tareas | xsol(j) > 0.99) write(j," ")
+		writeln
+	end-if
+
+end-if
+
+!Devuelve el tiempo empleado en obtener la solución
+writeln
+writeln("Tiempo empleado: ",gettime-tiempo)
+
+
+!PROCEDIMIENTOS
+procedure greedy1
+	
+	forall(j in tareas)marcada(j):=1
+	forall(j in tareas)ejecutada(j):=0
+	
+	final:=0
+	
+	while(final = 0) do
+	
+		!Buscar el k que minimiza f(k)
+		kmin:=0
+		aux:=999999
+		forall(j in tareas | marcada(j) = 1) do
+			if(f(j) < aux) then
+				aux:=f(j)
+				kmin:=j
+			end-if
+		end-do
+	
+		if(kmin = 0) then
+			final:=1
+		else
+			ejecutada(kmin):=1
+			marcada(kmin):=0
+			!Eliminar las incompatibles con k
+			forall(j in tareas | marcada(j) = 1) do
+				if(f(j) > s(kmin) and f(kmin) > s(j)) then
+					marcada(j):=0
+				end-if
+			end-do
+		end-if
+		
+	end-do
+	
+	forall(j in tareas)xsol(j):=ejecutada(j)
+	
+end-procedure
+
+
+
+
+end-model

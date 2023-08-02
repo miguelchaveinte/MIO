@@ -1,0 +1,360 @@
+model ModelName
+	
+uses "mmsystem"
+uses "mmive"
+
+forward function heur_2opt(nn:integer, s:array(range)of integer):real
+
+forward procedure dibujar_rutas(nr:integer, nnr:array(range)of integer, indr:array(range,range)of integer)
+
+declarations
+	
+	nombre:string
+	n, m:integer
+	cap:integer
+	
+	
+	archivo_datos = "E072-04f.dat"
+	
+	
+	 formato_datos = 2	! =1 datos de distancias
+   						! =2 datos coordenadas
+end-declarations
+
+fopen(archivo_datos,F_INPUT)
+
+if(formato_datos = 1)then
+	read(n)
+	read(m)
+elif(formato_datos = 2)then
+	read(nombre)
+	writeln("Problema ",nombre)
+	read(n)
+	read(m)
+end-if
+
+declarations
+	puntos=1..n
+	cx:array(puntos) of integer
+	cy:array(puntos) of integer
+	dist:array(puntos,puntos) of real
+	dem, p:array(puntos) of integer
+	ik,jk:integer
+	
+	sav:array(puntos,puntos)of real
+	nsav:integer
+	savord:array(range)of real
+	indi:array(range)of integer
+    indj:array(range)of integer
+    marcado:array(puntos,puntos)of integer
+    
+    rutas=1..n-1
+    ini:array(rutas)of integer
+    fin:array(rutas)of integer
+    sig:array(puntos,rutas)of integer
+    carga:array(rutas)of integer
+    ruta_activa:array(rutas)of integer
+    dist_ruta, dist_mej:array(rutas)of real
+    
+    tol = 0.001
+    base = 1
+    grafico = 2
+end-declarations
+if(formato_datos=1)then
+	forall(i in puntos)do
+  		read(i)
+  		read(dem(i))
+	end-do
+	forall(i in puntos,j in puntos)read(dist(i,j))
+  	read(cap)
+elif(formato_datos=2)then
+  	read(cap)
+  	forall(i in puntos)read(i,cx(i),cy(i))
+  	forall(i in puntos)read(i,dem(i))
+  	forall(i,j in puntos|i<>j)dist(i,j):=sqrt((cx(i)-cx(j))^2+(cy(i)-cy(j))^2)
+end-if	
+
+fclose(F_INPUT)
+forall(i in puntos)dist(i,i):=9999.9
+
+
+forall(i,j in puntos|i>1 and j>1)sav(i,j):=dist(i,1)+dist(1,j)-dist(i,j)
+
+time1:=gettime
+nsav:=0
+final:=0
+while(final=0)do
+   nsav:=nsav+1
+   daux:=-99999.
+   forall(i,j in puntos|i>1 and j>1 and i<>j and marcado(i,j)=0)do
+     if(sav(i,j)>daux)then
+        daux:=sav(i,j)
+        ik:=i
+        jk:=j
+     end-if
+   end-do
+   savord(nsav):=daux
+   indi(nsav):=ik
+   indj(nsav):=jk
+   marcado(ik,jk):=1
+   
+   if(daux<=0)then final:=1;end-if
+end-do
+(!
+writeln("Lista de ahorros ordenados:")
+writeln("t\ti\t\j\tsav\n")
+forall(t in 1..nsav)writeln(t,"\t",indi(t),"\t",indj(t),"\t",savord(t))
+!)
+! Solución inicial
+dist1:=0.
+nr:=0
+forall(k in puntos|k>1)do
+   nr:=nr+1
+   ruta_activa(nr):=1
+   ini(nr):=k
+   fin(nr):=k
+   nnr(nr):=1
+   carga(nr):=dem(k)
+   sig(k,nr):=1
+   sig(1,nr):=k
+   dist1:=dist1+dist(1,k)+dist(k,1)
+end-do
+
+writeln("\n(1) Algoritmo de Clarke-Wright con ordenacion de los ahorros")
+
+dist_total:=0.
+n1:=0;n2:=0;n3:=0;n4:=0
+forall(t in 1..nsav)do
+	iss:=indi(t)
+   js:=indj(t)   
+   !writeln("sav(",is,",",js,") = ",savord(t))
+  forall(k1, k2 in rutas|k1<>k2 and ruta_activa(k1)=1 and ruta_activa(k2)=1)do
+   
+     if(iss=fin(k2) and js=ini(k1) and carga(k1)+carga(k2)<=cap)then
+       n1:=n1+1
+       !writeln("mezcla de las rutas ",k1," y ",k2,", is = ",is,", js = ",js,", saving = ",savord(t),", caso 1")
+       ruta_activa(k1):=0
+       sig(iss,k2):=js
+       jact:=js
+       while(jact<>fin(k1))do
+         sig(jact,k2):=sig(jact,k1)
+         jact:=sig(jact,k1)
+       end-do 
+       fin(k2):=fin(k1)
+       sig(fin(k2),k2):=1
+       carga(k2):=carga(k1)+carga(k2)
+       nnr(k2):=nnr(k1)+nnr(k2)
+       nr:=nr-1
+    elif(iss=ini(k2) and js=fin(k1)  and carga(k1)+carga(k2)<=cap)then 
+        !writeln("mezcla de las rutas ",k1," y ",k2,", is = ",is,", js = ",js,", saving = ",savord(t),", caso 2")
+        n2:=n2+1
+       	ruta_activa(k2):=0
+       	carga(k1):=carga(k1)+carga(k2)
+       	sig(js,k1):=iss
+       	jact:=iss
+       	while(jact<>fin(k2))do
+         	sig(jact,k1):=sig(jact,k2)
+         	jact:=sig(jact,k2)
+       	end-do 
+       	fin(k1):=fin(k2)
+       	sig(fin(k1),k1):=base
+       	nnr(k1):=nnr(k1)+nnr(k2)
+       	nr:=nr-1
+       	
+     elif(iss=ini(k2) and js=ini(k1)  and carga(k1)+carga(k2)<=cap)then 
+     	!writeln("mezcla de las rutas ",k1," y ",k2,", is = ",is,", js = ",js,", saving = ",savord(t),", caso 3")
+        n3:=n3+1
+       	ruta_activa(k2):=0
+       	carga(k1):=carga(k1)+carga(k2)
+       	sig(iss,k1):=js
+       	ini(k1):=fin(k2)
+       	jact:=iss
+       	while(jact<>fin(k2))do
+       		h:=sig(jact,k2)
+       		sig(h,k1):=jact      	
+         	jact:=h
+       	end-do 
+       	nnr(k1):=nnr(k1)+nnr(k2)
+       	nr:=nr-1
+      
+    elif(js=fin(k1) and iss=fin(k2) and carga(k1)+carga(k2)<=cap)then		! caso 4:
+       	
+       	!writeln("mezcla de las rutas ",k1," y ",k2,", is = ",is,", js = ",js,", saving = ",savord(t),", caso 4")
+    	n4:=n4+1
+       	ruta_activa(k2):=0
+       	carga(k1):=carga(k1)+carga(k2)
+       	sig(js,k1):=iss
+       	! se cambia el sentodo desde b  hasta is
+       	jact:=base
+       	!temp:=sig(jact,k2max)
+       	while(jact<>fin(k2))do
+       		h:=sig(jact,k2)
+       		sig(h,k1):=jact
+         	jact:=h
+       	end-do 
+       	fin(k1):=ini(k2)
+       	sig(ini(k2),k1):=base
+       	nnr(k1):=nnr(k1)+nnr(k2)
+       	nr:=nr-1  
+       	
+     end-if
+   end-do
+end-do
+
+!===================== Solución final de la heurística de Clarke and Wright ===================
+writeln("\n\nSolucion de la heuristica de Clarke and Wright:")
+!writeln("Número de rutas: ",nra)
+nr:=0
+dist_total:=0.  ! distancia total de la ruta
+forall(k1 in rutas|ruta_activa(k1)=1)do
+  nr:=nr+1
+  dist_ruta(nr):=0.
+  carga(nr):=carga(k1)
+  nnr(nr):=nnr(k1)+1
+  write("\nruta ",nr,", carga: ",carga(nr),", nnr = ",nnr(nr),"\n\trecorrido: ")
+  t1:=1
+  indr(t1,nr):=1
+  write(1)
+  jact:=ini(k1)
+  t1:=t1+1
+  indr(t1,nr):=jact
+  dist_ruta(nr)+=dist(1,jact)
+  write("-",jact)
+  
+  while(jact<>fin(k1))do
+     dist_ruta(nr)+=dist(jact, sig(jact,k1))
+     jact:=sig(jact,k1)
+     t1:=t1+1
+     indr(t1,nr):=jact
+     write("-",jact)    	
+  end-do
+  write("-",1)
+  !t1:=t1+1
+  !indr(t1,k1):=1
+  nnr(nr):=t1
+  dist_ruta(nr)+=dist(fin(k1),1)		! para cerrar el recorrido
+  write("\n\tnnr = ",nnr(nr),", dist_ruta = ",dist_ruta(nr))
+  dist_total+=dist_ruta(nr)
+end-do
+!writeln("\nnra = ",nra)
+
+writeln("\n indr\n")
+forall(k in 1..nr)do
+	write("\nruta ",k," -> ")
+	forall(i in 1..nnr(k))write(indr(i,k),"-")
+end-do
+
+writeln("\n\nDistancia total = ",dist_total)
+writeln("Tiempo total = ",gettime-time1)
+
+
+!=================================================================================
+writeln("\n(2) Mejora 2-opt en cada ruta\n")!Intra ruta
+	dist_total:=0.
+	forall(k in 1..nr)do
+		nn:=nnr(k)
+		forall(j in 1..nnr(k))p(j):=indr(j,k)
+		dist_mej(k):=heur_2opt(nn,p)
+		dist_total+=dist_mej(k)
+		forall(j in 1..nnr(k))indr(j,k):=p(j)
+	end-do
+	
+writeln("\nDistancia final mejorada = ",dist_total)
+writeln("Tiempo total = ",gettime-time1)
+writeln("\n indr\n")
+forall(k in 1..nr)do
+	write("\nruta ",k," -> ")
+	forall(i in 1..nnr(k))write(indr(i,k),"-")
+	write("  dist = ",dist_mej(k))
+end-do
+
+if(formato_datos = 2 and grafico = 2)then
+	dibujar_rutas(nr, nnr, indr)
+end-if
+
+!========================================================================
+!				Funciones y procedimientos
+!========================================================================
+function heur_2opt(nn:integer, p:array(range)of integer):real
+
+	declarations
+		final_2opt,ik, jk, iact, jact, fin:integer 
+		pp:array(1..nn)of integer
+		mejora, mejora_max, d_total:real
+	end-declarations
+	
+	
+	final_2opt:=0	
+	while(final_2opt=0)do
+		d_total:=sum(i in 1..nn-1)dist(p(i),p(i+1))+dist(p(nn),p(1))
+		mejora_max:=-99999.
+		forall(i in 1..nn)pp(i):=p(i)			! <-  copia del array p
+		!caso 1) i<j-1 and j<nn
+		forall(i,j in 1..nn|i<j-1 and j<=nn-1)do
+			mejora:=dist(p(i),p(i+1)) + dist(p(j),p(j+1)) - dist(p(i),p(j)) - dist(p(i+1), p(j+1))
+			if(mejora > mejora_max)then
+				mejora_max:=mejora
+				ik:=i
+				jk:=j
+			end-if		
+		end-do
+		! caso 2) j = nn
+		forall(i in 2..nn-2)do
+			mejora:=dist(p(nn),p(1)) + dist(p(i),p(i+1)) - dist(p(i),p(nn)) - dist(p(i+1), p(1))
+			if(mejora > mejora_max)then
+				mejora_max:=mejora
+				ik:=i
+				jk:=nn
+			end-if		
+		end-do
+
+		if(mejora_max <= 0.0001)then
+		  	final_2opt:=1
+		  	returned:=d_total
+		else
+			iact:=ik+1
+			jact:=jk
+			p(iact):=pp(jact)
+			fin:=0
+			while(fin=0)do
+				if(iact=jk)then 
+					fin:=1
+				else
+					jact-=1
+					iact+=1
+					p(iact):=pp(jact)
+				end-if
+			end-do
+		end-if
+	end-do
+	returned:=d_total
+end-function	
+
+!====================================================================
+procedure dibujar_rutas(nr:integer, nnr:array(range)of integer, indr:array(range,range)of integer)
+	
+	id1:=IVEaddplot("puntos",IVE_BLACK)
+	forall(j in puntos)IVEdrawpoint(id1,cx(j),cy(j))
+	
+	
+	colores:={IVE_BLUE, IVE_CYAN, IVE_GREEN, IVE_MAGENTA, IVE_RED, IVE_WHITE, IVE_YELLOW}
+	ncolor:=1
+	forall(k in 1..nr) do
+		id(k):=IVEaddplot("ruta",colores(ncolor))
+		ncolor:=ncolor+1
+		if(ncolor = 7) then
+			ncolor:=1
+		end-if
+	end-do
+	
+	
+	forall(k in 1..nr)do
+		forall(j in 1..nnr(k)-1)IVEdrawline(id(k),cx(indr(j,k)),cy(indr(j,k)),cx(indr(j+1,k)),cy(indr(j+1,k)))
+		IVEdrawline(id(k),cx(indr(nnr(k),k)),cy(indr(nnr(k),k)),cx(indr(1,k)),cy(indr(1,k)))
+	end-do
+	
+end-procedure
+
+end-model
+
+

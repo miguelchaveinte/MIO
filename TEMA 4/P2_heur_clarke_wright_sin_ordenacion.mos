@@ -1,0 +1,321 @@
+! Heuristica de Clarke-Wright para CVRP:
+!	-  sin ordenación de los ahorros
+!	-  se examinan los 4 casos
+
+
+model "Heuristica de Clarke-Wright sin ordenacion" 
+
+uses "mmsystem"
+uses "mmive"
+
+forward procedure dibujar_rutas(nr:integer, nnr:array(range)of integer, indr:array(range,range)of integer)
+
+	
+declarations
+   	n:integer
+   	m:integer
+   
+   
+   	archivo_datos = "E072-04f.dat"
+   	
+	formato_datos = 2	! =1 datos distancias, =2 datos coordenadas
+	nombre:string
+end-declarations
+
+fopen(archivo_datos,F_INPUT)
+if(formato_datos = 1)then
+	read(n)
+	read(m)
+elif(formato_datos = 2)then
+	read(nombre)
+	read(n)
+	read(m)
+end-if
+declarations
+   puntos = 1..n
+   cx,cy:array(puntos)of integer
+   dist:array(puntos,puntos) of real
+  
+   dem:array(puntos)of integer
+   cap:integer
+   
+   rutas = 1..n-1
+   nnr:array(rutas)of integer		! numero de puntos de cada ruta, excuyendo el nodo 1
+   indr:array(puntos,rutas)of integer
+   ruta_activa:array(rutas)of integer
+   carga:array(rutas)of integer
+   
+   nr:integer					! numero de rutas activas en la solución actual
+   
+   sig:array(puntos,rutas)of integer ! array de siguientes de cada nodo en cada ruta
+   ini:array(rutas) of integer
+   fin:array(rutas) of integer
+   ahorro:array(1..4)of real
+   
+   sav:array(puntos,puntos)of real  ! matriz de savings
+  
+   dist_ruta:array(rutas)of real
+   distotal:real
+   
+  
+   final, jact, iss, js, t1, i1:integer
+   base = 1
+   variante = 2		! =0 sin variante, =1 con lambda, = 2 con lambda y nu
+   lambda = 1.2
+   mu = 0.2
+   tiempo1:real
+   grafico = 2
+end-declarations
+
+if(formato_datos=1)then
+	forall(i in puntos)do
+  		read(i1)
+  		read(dem(i))
+	end-do
+	forall(i in puntos,j in puntos)read(dist(i,j))
+  	read(cap)
+elif(formato_datos=2)then
+  	read(cap)
+  	forall(i in puntos)read(i1,cx(i),cy(i))
+  	forall(i in puntos)read(i1,dem(i))
+  	forall(i,j in puntos|i<>j)dist(i,j):=sqrt((cx(i)-cx(j))^2+(cy(i)-cy(j))^2)
+end-if	
+fclose(F_INPUT)
+
+dem_total:=sum(i in puntos|i<>1)dem(i)
+
+!====================================== DATOS =============================
+writeln("Problema de routing con capacidades  CVRP, \nn = ",n,", m = ",m)
+writeln("Datos: ",archivo_datos)
+
+!writeln("\nDemandas: ")
+!forall(i in puntos)writeln(dem(i))
+writeln("Demanda total: ",dem_total)
+tiempo1:=gettime
+(!
+writeln("\nMatriz de distancias:\n")
+forall(i in puntos)do
+  writeln
+  forall(j in puntos)write(dist(i,j),"\t")
+end-do
+!)
+writeln("\nCapacidad = ",cap)
+writeln("Minimo numero de vehiculos: ",ceil(dem_total/cap))
+!writeln("Numero de vehiculos: ",m)
+writeln("\n(1)Heuristica de Clarke-Wright sin ordenacion de los ahorros")
+!============================================================================
+! Solucion inicial con n-1 rutas sobre la base
+nr:=0
+dsol:=0.
+forall(i in puntos|i<>base)do
+   nr:=nr+1
+   nnr(nr):=1
+   sig(i,nr):=base
+   sig(base,nr):=i
+   ruta_activa(nr):=1
+   carga(nr):=dem(i)
+   ini(nr):=i
+   fin(nr):=i
+   dist_ruta(nr):=dist(base,i)+dist(i,base)
+   dsol:=dsol+dist(base,i)+dist(i,base)
+end-do
+
+! Cálculo de la matriz de ahorros (savings)
+
+if(variante = 0) then 
+	forall(i,j in puntos|i<>base and j<>base and i<>j)sav(i,j):=
+		dist(i,base)+dist(base,j)-dist(i,j)
+elif(variante = 1)then !con landa
+	forall(i,j in puntos|i<>base and j<>base and i<>j)sav(i,j):=
+		dist(i,base)+dist(base,j)-lambda*dist(i,j)
+elif(variante = 2)then !con mu
+	forall(i,j in puntos|i<>base and j<>base and i<>j)sav(i,j):=
+		dist(i,base)+dist(base,j)-lambda*dist(i,j)-mu*abs(dist(base,i)-dist(j,base))
+end-if
+!============================================================================
+! Bucle principal
+
+n1:=0;n2:=0;n3:=0;n4:=0
+final:=0
+while(final = 0)do
+   		ahorro_max:=-999999.
+   		forall(k1, k2 in rutas|k1<>k2 and ruta_activa(k1)=1 and 
+   			ruta_activa(k2)=1 and carga(k1)+carga(k2)<=cap)do
+   			
+   			ahorro(1):=sav(ini(k1),fin(k2))	! caso 1
+   			ahorro(2):=sav(fin(k1),ini(k2))	! caso 2
+   			ahorro(3):=sav(ini(k1),ini(k2))	! caso 3
+   			ahorro(4):=sav(fin(k1),fin(k2))	! caso 4
+   			aux:=-9999.
+   			forall(c in 1..4)do !en cada uno de esos cuatro maximos guardo el caso maximo
+   				if(ahorro(c)>aux)then
+   					aux:=ahorro(c)
+   					caux:=c				! caso de maxima mejora
+   				end-if
+   			end-do
+   			
+   			ahorro_act:=aux 			
+   			if(ahorro_act > ahorro_max)then
+   				ahorro_max:=ahorro_act
+   				k1max:=k1
+   				k2max:=k2
+   				cmax:=caux		! aquí guardo el caso que se da en el máximo
+   			end-if
+   		end-do
+   		!writeln("nr = ",nr,", ahorro_max = ",ahorro_max,", cmax = ",cmax)
+   		
+   		! Mezcla de rutas en cada caso
+   	  	if(ahorro_max > 0 and cmax = 1)then		! caso 1: j primero Ruta 1; i ultimo Ruta 2
+   	  		n1:=n1+1
+   			iss:=fin(k2max)
+   			js:=ini(k1max)
+     		ruta_activa(k1max):=0
+       		sig(iss,k2max):=js
+       		jact:=js
+       		while(jact<>fin(k1max))do
+         		sig(jact,k2max):=sig(jact,k1max)
+         		jact:=sig(jact,k1max)
+       		end-do 
+       		fin(k2max):=fin(k1max)
+       		sig(fin(k2max),k2max):=base
+       		carga(k2max):=carga(k1max)+carga(k2max)
+       		nnr(k2max):=nnr(k1max)+nnr(k2max)
+       		nr:=nr-1
+   			
+       	elif(ahorro_max > 0 and cmax = 2)then		! caso 2: j ultimo Ruta 1; i primero Ruta 2 -> analogo al 1
+       		n2:=n2+1
+       		iss:=ini(k2max)
+       		js:=fin(k1max)
+   			ruta_activa(k2max):=0
+       		sig(js,k1max):=iss
+       		jact:=iss
+       		while(jact<>fin(k2max))do
+         		sig(jact,k1max):=sig(jact,k2max)
+         		jact:=sig(jact,k2max)
+       		end-do 
+       		fin(k1max):=fin(k2max)
+       		sig(fin(k1max),k1max):=base
+       		carga(k1max):=carga(k1max)+carga(k2max)
+       		nnr(k1max):=nnr(k1max)+nnr(k2max)
+       		nr:=nr-1
+       	  !	
+       	elif(ahorro_max > 0 and cmax = 3)then		! caso 3: i, j son los primeros
+       		n3:=n3+1
+       		js:=ini(k2max) !copia j
+       		iss:=ini(k1max) !copia i
+       		ruta_activa(k1max):=0 !solo necesito k2
+       		sig(iss,k2max):=js !nuevo nodo
+       		!cambiar el sentido en k1max desde is hasta la base
+       		jact:=iss
+       		while(jact<>fin(k1max))do
+       			t:=sig(jact,k1max)
+       			sig(t,k2max):=jact
+       			jact:=t
+       		end-do 
+       		ini(k2max):=fin(k1max) 
+       		sig(base,k2max):=ini(k2max) !el ultimo que apunte a la base
+       		carga(k2max):=carga(k1max)+carga(k2max)
+       		nnr(k2max):=nnr(k1max)+nnr(k2max)
+       		nr:=nr-1 !una ruta menos
+   		
+       	elif(ahorro_max > 0 and cmax= 4)then		! caso 4:-> analogo al caso 3
+       		n4:=n4+1
+       		js:=fin(k1max)
+       		iss:=fin(k2max)
+       		ruta_activa(k2max):=0
+       		sig(js,k1max):=iss
+       		! se cambia el sentodo desde b  hasta is
+       		jact:=base
+       		!temp:=sig(jact,k2max)
+       		while(jact<>fin(k2max))do
+       			t:=sig(jact,k2max)
+       			sig(t,k1max):=jact
+         		jact:=t
+       		end-do 
+       		fin(k1max):=ini(k2max)
+       		sig(ini(k2max),k1max):=base
+       		carga(k1max):=carga(k1max)+carga(k2max)
+       		nnr(k1max):=nnr(k1max)+nnr(k2max)
+       		nr:=nr-1 !restamos la ruta eliminada tras la fusion 
+     
+       else
+       		final:=1 !cuando ya no haya ahorro positivo despues de considerar todo
+       end-if  
+	end-do	! final de while
+	
+	
+!===================== Solución final de la heurística de Clarke and Wright ===================
+writeln("\nSolucion final de la heuristica de Clarke and Wright:")
+writeln("Conteo de casos: n1 = ",n1,", n2 = ",n2,", n3 = ",n3,", n4 = ",n4)
+writeln("Numero de rutas: ",nr)
+writeln("\nRuta\tCarga\tnnr\tRecorrido\n")
+nr:=0
+distotal:=0.  ! distancia total de las rutas
+forall(k1 in rutas|ruta_activa(k1)=1)do
+  nr:=nr+1
+  nnr(nr):=nnr(k1)+1
+  write("\n",nr,"\t",carga(k1),"\t",nnr(k1)+1,"\t")
+  t1:=1;indr(t1,nr):=base
+  write(base)
+  jact:=ini(k1)
+  t1:=t1+1
+  indr(t1,nr):=jact
+  
+  write("-",jact)
+  distotal:=distotal+dist(base,ini(k1))
+  while(jact<>fin(k1))do
+     distotal:=distotal+dist(jact, sig(jact,k1))
+     jact:=sig(jact,k1)
+     t1:=t1+1
+     indr(t1,nr):=jact
+     write("-",jact)    	
+  end-do
+  write("-",base)
+  !t1:=t1+1
+  !indr(t1,k1):=1
+  distotal:=distotal+dist(fin(k1),base)		! para cerrar el recorrido
+  !write(", nnr = ",nnr(k1)+1,", t1 = ",t1)
+ ! nnr(k1):=t1
+end-do
+(!
+writeln("\nArray indr\n")
+forall(k in 1..nr)do
+	write("\nruta ",k," -> ")
+	forall(i in 1..nnr(k))write(indr(i,k),"-")
+end-do
+!)
+writeln("\n\nDistancia total = ",distotal)
+writeln("Tiempo total = ",gettime-tiempo1)
+
+if(formato_datos = 2 and grafico = 2)then
+	dibujar_rutas(nr, nnr, indr)
+end-if
+
+
+!====================================================================
+procedure dibujar_rutas(nr:integer, nnr:array(range)of integer, indr:array(range,range)of integer)
+	
+	id1:=IVEaddplot("puntos",IVE_BLACK)
+	forall(j in puntos)IVEdrawpoint(id1,cx(j),cy(j))
+	
+	
+	colores:={IVE_BLUE, IVE_CYAN, IVE_GREEN, IVE_MAGENTA, IVE_RED, IVE_WHITE, IVE_YELLOW}
+	ncolor:=1
+	forall(k in 1..nr) do
+		id(k):=IVEaddplot("ruta",colores(ncolor))
+		ncolor:=ncolor+1
+		if(ncolor = 7) then
+			ncolor:=1
+		end-if
+	end-do
+	
+	
+	forall(k in 1..nr)do
+		forall(j in 1..nnr(k)-1)IVEdrawline(id(k),cx(indr(j,k)),cy(indr(j,k)),cx(indr(j+1,k)),cy(indr(j+1,k)))
+		IVEdrawline(id(k),cx(indr(nnr(k),k)),cy(indr(nnr(k),k)),cx(indr(1,k)),cy(indr(1,k)))
+	end-do
+	
+end-procedure
+
+
+end-model

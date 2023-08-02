@@ -1,0 +1,55 @@
+
+model "TSP-1"
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+uses "mmive"
+
+declarations
+n:integer
+archivo_datos = "burma14.txt"
+end-declarations
+fopen (archivo_datos, F_INPUT)
+	read(n)
+	declarations
+		nodos = 1..n
+		dist:array(nodos, nodos)of real !no redondeamos distancias
+		cx, cy:array(nodos)of real
+		
+		x:array(nodos, nodos)of mpvar
+		u:array(nodos)of mpvar  !variables auxiliares de TMZ (Tuker, miller ...)
+		
+	end-declarations
+forall(i in nodos)read(i,cx(i),cy(i))
+fclose(F_INPUT)
+writeln("cx:", cx)!para ver si estan bien leidos los datos
+writeln("cy:", cy)
+
+forall(i, j in nodos)dist(i,j):=sqrt((cx(i)-cx(j))^2+(cy(i)-cy(j))^2)!la diagonal sale 0 asi qu la penalizamos
+forall(i in nodos)dist(i,i):=9999.9 !penalizamos diagonal
+
+
+
+writeln("Probleam TSP, n =", n)
+writeln("Datos: ", archivo_datos)
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!MODELO!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+dist_total:=sum(i,j in nodos)dist(i,j)*x(i,j)
+
+forall(i,j in nodos)x(i,j) is_binary
+forall(i in nodos)rl(i):= sum (j in nodos)x(i,j)=1
+forall(j in nodos)r2(j):= sum (i in nodos)x(i,j)=1
+
+
+minimize(dist_total)
+writeln("Distancia minima =", getobjval)
+
+!!!!!!!!!!!!veamos la grafica
+
+i1:=IVEaddplot("puntos", IVE_BLACK)
+i2:=IVEaddplot("lineas", IVE_RED)
+
+forall(i in nodos)IVEdrawpoint(i1,cx(i), cy(i))
+forall(i in nodos)IVEdrawlabel(i1,cx(i), cy(i), ""+i)
+forall(i,j in nodos|x(i,j).sol>=0.99)IVEdrawline(i2,cx(i), cy(i), cx(j), cy(j))
+
+end-model

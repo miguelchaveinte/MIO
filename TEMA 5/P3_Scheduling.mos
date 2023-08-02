@@ -1,0 +1,497 @@
+!P3 Scheduling
+model ModelName
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+uses "mmsystem";
+
+forward procedure permutaciones
+forward procedure busqueda_local ! 1 máquina
+forward procedure greedy_wspt ! en el examen o metiendo el realease o otro diferente q nos ha dado stp
+forward procedure greedy_edd
+forward procedure descenso_estocastico
+forward function calcularFuncionObjetivo (orden: array(range) of integer):real !Para la tardanza total ponderada
+! si nos da otra hay q cambiarla acorde a la funcion objetivo
+
+
+declarations
+	datos = "sched_10_1.txt"
+	problema = 2	!1 - Modelo disyuntivo -> comprobar a hacerle que se le salta
+					!2 - Modelo de índices de tiempo
+					!3 - N iteraciones: multistart + búsqueda local
+					!4 - Greedy WSPT + búsqueda local
+					!5 - Greedy EDD + búsqueda local
+					!6 - Greedy WSPT + Descenso estocástico
+	detallarsol = true
+	exportarsol = false
+	limiteTiempo = -60	!0 es sin límite. Negativo, aseguro que para tras 60 sec. desde que B&B encuentra la primera solucion
+	N = 10				!Número de repeticiones de los métodos multistart
+	itermax = 2000		! máximas iteraciones en descenso estocástico
+end-declarations
+
+entrada := datos
+salida := "soluciones/ " + problema + "." + datos
+
+declarations
+	n: integer
+end-declarations
+
+fopen(entrada,F_INPUT)
+
+read(n)
+
+!Para la formulación [F1]
+declarations
+	tareas=1..n
+	p, w, d: array(tareas) of integer
+	x, s, r: array(tareas) of mpvar
+	y: array(tareas, tareas) of mpvar
+	M : integer !cota
+end-declarations
+
+forall(j in tareas)read(p(j),w(j),d(j))
+
+fclose(F_INPUT)
+
+M := sum(j in tareas)p(j)
+
+if(exportarsol) then
+	fopen(salida,F_OUTPUT)
+end-if
+
+! Para la formulación [F2]
+T := sum(j in tareas) p(j)
+
+declarations
+	tiempos = 1..T
+	x2:array(tareas, tiempos) of mpvar ! Porque ya he utilizado x
+	e:array(tareas, tiempos) of real !usamos la formulación general de funcion objetiva dada para [F2]
+end-declarations
+
+!Importante para llegar al exacto sn problemas
+setparam("XPRS_MIPRELSTOP",0.00000001)
+
+!Imprimir detalles del problema
+writeln("Archivo de datos: ",datos)
+writeln("Tamaño del problema: ",n)
+
+
+writeln
+if(problema = 1) then
+	writeln("Modelo disyuntivo")
+elif (problema = 2) then
+	writeln("Modelo de índices de tiempo")	
+elif (problema = 3) then
+	writeln("N iteraciones: permutaciones aleatorias + búsqueda local")		
+elif (problema = 4) then
+	writeln("Método Greedy WSPT + búsqueda local")		
+elif (problema = 5) then
+	writeln("Método Greedy EDD + búsqueda local")	
+elif (problema = 6) then
+	writeln("Descenso estocástico")		
+end-if
+
+
+if(problema = 1) then
+
+	
+	if(limiteTiempo <> 0) then
+		writeln("Tiempo limitado a ",limiteTiempo," segundos")
+	end-if
+
+
+	tiempo:=gettime
+
+	if (limiteTiempo <> 0) then
+		setparam("XPRS_MAXTIME",limiteTiempo)
+	end-if
+
+	!! HAY QUE METER LA FORMULACIÓN UNO 
+	!minimize(obj) -> quitado para wque no de error
+	
+	writeln
+	writeln("Número de variables: ",getparam("XPRS_COLS"))
+	writeln("Número de restricciones: ",getparam("XPRS_ROWS"))
+	writeln("Cota inferior: ",getparam("XPRS_BESTBOUND"))
+	writeln("Hueco relativo: ",100*(getobjval-getparam("XPRS_BESTBOUND"))/(getobjval))
+	
+	writeln
+	writeln("Valor objetivo: ",getobjval)
+	writeln
+	
+	forall(j in tareas)pos(j):=0
+	forall(j in tareas)xsol(j):=round(x(j).sol)
+	qsort(SYS_UP,xsol,pos)! ordena xsol de forma creciente y lo almacena en pos, similar a order de R
+	
+	
+	forall(j in tareas) do
+		tarea:=pos(j)
+		t1:=xsol(tarea)
+		t2:=xsol(tarea)+p(tarea)
+		writeln("Tarea ",tarea,": ",t1," - ",t2," (tardanza de ",round(r(tarea).sol),")")
+	end-do
+
+elif (problema = 2) then
+	
+
+	forall(j in tareas) do
+		forall(t in 1..(T-p(j)+1)) do
+			e(j,t):=w(j)*maxlist(0,t-1+p(j)-d(j)) !cambiar la e segun el problema de funcion objetivo
+		end-do
+	end-do
+	
+	obj:=sum(j in tareas, t in 1..(T-p(j)+1))e(j,t)*x2(j,t)
+	forall(j in tareas)sum(t in 1..(T-p(j)+1))x2(j,t)=1 !cada tarea se inicia en un instante de tiempo determinado
+	forall(t in tiempos)sum(j in tareas, m in tiempos | m>=maxlist(0,t-p(j)+1) and m<=t)x2(j,m)<=1 !En cada tiempo, como mucho habrá un trabajo que pueda ser procesado!uso m porque s ocupada
+	forall(j in tareas, t in tiempos)x2(j,t) is_binary
+	
+	
+	if(limiteTiempo <> 0) then
+		writeln("Tiempo limitado a ",limiteTiempo," segundos")
+	end-if
+
+
+	tiempo:=gettime
+
+	if (limiteTiempo <> 0) then
+		setparam("XPRS_MAXTIME",limiteTiempo)
+	end-if
+
+	minimize(obj)
+	
+	writeln
+	writeln("Número de variables: ",getparam("XPRS_COLS"))
+	writeln("Número de restricciones: ",getparam("XPRS_ROWS"))
+	writeln("Cota inferior: ",getparam("XPRS_BESTBOUND"))
+	writeln("Hueco relativo: ",100*(getobjval-getparam("XPRS_BESTBOUND"))/(getobjval))
+	
+	writeln
+	writeln("Valor objetivo: ",getobjval)
+	writeln
+	
+	forall(t in tiempos, j in tareas | x2(j,t).sol >= 0.99)do
+		!La tarea j es la siguiente
+		tini:=t-1 !formalismo pq lo tenemos discretizado .. en teoria
+		tfin:=tini+p(j)
+		writeln("Tarea ",j,": ",tini," - ",tfin," (tardanza de ",maxlist(0,tfin-d(j)),")") !para mostrar la tardanza
+	end-do
+	
+	
+elif (problema = 3) then
+	
+	forall(t in tareas)orden(t):=0 !inicializacion del vector en 0
+	forall(t in tareas)mejororden(t):=0 !inicializacion del vector en 0
+	mejorobjetivo:=9999999.9
+	
+	forall(iter in 1..N) do
+		
+		!writeln(iter)
+		
+		!Método de permutaciones aleatorias
+		!El resultado se devuelve en un array llamado "orden"
+		permutaciones
+		
+		!Búsqueda local
+		!El resultado se devuelve en un array llamado "orden"
+		busqueda_local
+		
+		!Cálculo de la función objetivo
+		objetivo:=calcularFuncionObjetivo(orden)
+		
+		!Elegimos la mejor solución
+		if(objetivo < mejorobjetivo) then
+			mejororden:=orden
+			mejorobjetivo:=objetivo
+		end-if
+		
+	end-do
+
+	writeln
+	writeln("Valor objetivo: ",mejorobjetivo)
+	writeln
+	
+	tiempofin:=0
+	forall(t in tareas)do
+		tarea:=mejororden(t)
+		tiempofin:=tiempofin+p(tarea)
+		tardiness:=maxlist(0,tiempofin-d(tarea))
+		writeln("Tarea ",tarea,": ",tiempofin-p(tarea)," - ",tiempofin," (tardanza de ",tardiness,")")!Mostramos sin ponderar
+	end-do
+	
+	
+elif (problema = 4) then
+	
+	forall(t in tareas)orden(t):=0
+	
+	greedy_wspt
+		
+	busqueda_local
+		
+	objetivo:=calcularFuncionObjetivo(orden)
+	
+		
+	writeln
+	writeln("Valor objetivo: ",objetivo)
+	writeln
+	
+	tiempofin:=0
+	forall(t in tareas)do
+		tarea:=orden(t)
+		tiempofin:=tiempofin+p(tarea)
+		tardiness:=maxlist(0,tiempofin-d(tarea))
+		writeln("Tarea ",tarea,": ",tiempofin-p(tarea)," - ",tiempofin," (tardanza de ",tardiness,")")!Mostramos sin ponderar
+	end-do
+	
+	
+elif (problema = 5) then
+	
+	forall(t in tareas)orden(t):=0
+	
+	greedy_edd
+		
+	busqueda_local
+		
+	objetivo:=calcularFuncionObjetivo(orden)
+	
+		
+	writeln(orden)
+	writeln("Valor objetivo: ",objetivo)
+	writeln
+	
+	tiempofin:=0
+	forall(t in tareas)do
+		tarea:=orden(t)
+		tiempofin:=tiempofin+p(tarea)
+		tardiness:=maxlist(0,tiempofin-d(tarea))
+		writeln("Tarea ",tarea,": ",tiempofin-p(tarea)," - ",tiempofin," (tardanza de ",tardiness,")")
+	end-do
+	
+	
+
+
+
+elif (problema = 6) then
+	
+	forall(t in tareas)orden(t):=0 !inicializacion del vector en 0
+	forall(t in tareas)mejororden(t):=0 !inicializacion del vector en 0
+	mejorobjetivo:=9999999.9
+	
+
+	!Greedy WSPT
+	greedy_wspt
+		
+	!Cálculo de la función objetivo
+	objetivoIni := calcularFuncionObjetivo(orden)
+	mejorobjetivo := objetivoIni
+	forall(t in tareas)mejororden(t) := orden(t)
+	writeln("objetivo greedy wspt: ",objetivoIni)
+		
+	!Descenso estocastico. Entorno de intercambio  
+	!El resultado se devuelve en un array llamado "orden"
+	!partimos de una sol inicial y buscamos en un entorno de ella . intercambio posicion tareas 1-1 y ver si eso mejora la solucion. si mejora guay sino acumulo un fracaso hasta un limite
+	descenso_estocastico
+		
+	!Cálculo de la función objetivo
+	mejorobjetivoDE:=calcularFuncionObjetivo(orden)
+
+		
+	!Elegimos la mejor solución
+	if( mejorobjetivoDE < mejorobjetivo) then
+		forall(t in tareas) mejororden(t) :=orden(t)
+		mejorobjetivo := mejorobjetivoDE
+	end-if
+	
+
+	writeln
+	writeln("Valor objetivo: ",mejorobjetivo)
+	writeln
+	tiempofin:=0
+	forall(t in tareas)do
+		tarea:=orden(t)
+		tiempofin:=tiempofin+p(tarea)
+		tardiness:=maxlist(0,tiempofin-d(tarea))
+		writeln("Tarea ",tarea,": ",tiempofin-p(tarea)," - ",tiempofin," (tardanza de ",tardiness,")")
+	end-do
+
+
+end-if
+
+writeln
+writeln("Tiempo empleado: ",gettime-tiempo)
+
+
+!PROCEDIMIENTOS
+procedure permutaciones
+	
+	forall(t in tareas) marcado(t):=0 !inicializo el vector en 0
+	forall(t in tareas) orden(t):=0 !inicializo el vector en 0
+	
+	forall(i in 1..n)do
+	
+		!Se meten en un array los elementos que aun quedan por elegir. ! cada vez que se mete , se quitan tareas se reduce una posicion en indice... (revisar audio)
+		indice:=0
+		forall(t in tareas | marcado(t) = 0) do
+			indice:=indice+1
+			elegir(indice):=t !elegir va teniendo cada vez una posición menos
+		end-do
+		
+		eleccion:=elegir(ceil(random*indice))!Elige número aleatorio entre 1 e índice
+		marcado(eleccion):=1
+		orden(i):=eleccion
+		
+	end-do
+	
+end-procedure
+
+
+procedure descenso_estocastico						! orden es la solucion actual y fAct su valor objetivo
+	declarations
+		solNew:array(tareas)of integer
+	end-declarations
+	
+	nfracasos := 0
+	iter:=0
+	while(nfracasos < itermax) do
+		fAct := calcularFuncionObjetivo(orden)
+		iter+=1
+		!Escogemos una solucion aleatoria en el entorno de orden
+		ind1 := ceil(random*n)
+		ind2 := ceil(random*n)
+		
+		while(ind1 = ind2)do
+			ind2 := ceil(random*n)
+		end-do
+		
+		!Hacer el intercambio, y se guarda en solNew
+		solNew:=orden
+		solNew(ind1):=orden(ind2)
+		solNew(ind2):=orden(ind1)
+		
+		!Comprobamos el valor de la función objetivo
+		
+		fNew := calcularFuncionObjetivo(solNew)
+		if(fNew<fAct)then
+			forall(t in tareas) orden(t) := solNew(t)
+			nfracasos := 0
+		else
+			nfracasos := nfracasos +1
+		end-if
+		
+	end-do
+	!forall(t in tareas) orden(t) := solIni(t)
+end-procedure
+
+
+procedure busqueda_local
+	
+	final:=0
+	while(final = 0) do
+	
+		!Buscar la mejora máxima
+		mejoramax:=0.0
+		f_antes:=calcularFuncionObjetivo(orden)
+		forall(tt1 in tareas, tt2 in tareas | tt1 < tt2) do
+		
+			!Probar el intercambio
+			temp:=orden(tt1)
+			orden(tt1):=orden(tt2)
+			orden(tt2):=temp
+			
+			f_despues:=calcularFuncionObjetivo(orden)
+			
+			!Deshacer el intercambio
+			temp:=orden(tt1)
+			orden(tt1):=orden(tt2)
+			orden(tt2):=temp
+			
+			mejora:=f_antes-f_despues
+			if(mejora > mejoramax)then
+				mejoramax:=mejora
+				t1max:=tt1
+				t2max:=tt2
+			end-if
+		end-do
+		
+		if(mejoramax = 0) then
+			final := 1
+		else
+			!Se hace el intercambio
+			temp:=orden(t1max)
+			orden(t1max):=orden(t2max)
+			orden(t2max):=temp
+		end-if
+		
+	end-do
+	
+end-procedure
+
+procedure greedy_wspt
+	
+	forall(t in tareas) criterio(t):=w(t)/p(t)
+	forall(t in tareas) marcado(t):=0
+	forall(t in tareas) orden(t):=0
+	
+	forall(i in 1..n)do
+		
+		tmax:=0
+		cmax:=0.0
+		forall(t in tareas | marcado(t) = 0) do !ordenar decreciente w(t)/p(t) <-> ordenar creciente p(t)/w(t)  : empiezo en ordenes decrecientes
+			if(criterio(t) > cmax) then
+				tmax:=t
+				cmax:=criterio(t)
+			end-if
+		end-do
+		
+		marcado(tmax):=1
+		orden(i):=tmax
+		!writeln(criterio(tmax))
+		
+	end-do
+	
+end-procedure
+
+
+
+procedure greedy_edd
+	
+	forall(t in tareas) criterio(t):=d(t)!criterio greedy
+	forall(t in tareas) marcado(t):=0!Ninguna tarea esta en la solucion
+	forall(t in tareas) orden(t):=0!No hay orden entre las tareas
+	
+	forall(i in 1..n)do
+		
+		tmin:=0
+		cmin:=99999999999999.9
+		forall(t in tareas | marcado(t) = 0) do
+			if(criterio(t) < cmin) then
+				tmin:=t
+				cmin:=criterio(t)
+			end-if
+		end-do
+		
+		marcado(tmin):=1
+		orden(i):=tmin
+		
+		
+	end-do
+	
+end-procedure
+
+function calcularFuncionObjetivo (orden: array(range) of integer):real !tardanza total ponderada !la vuelvo a definir despues de la F2... aqui la defino para las heuristicas
+	tiempofin:=0
+	forall(t in tareas)tard(t):=0.0
+	forall(t in tareas) do
+		tarea:=orden(t)
+		tiempofin:=tiempofin+p(tarea)
+		tard(tarea):=maxlist(0,tiempofin-d(tarea))
+	end-do
+	objetivo:=sum(j in tareas)w(j)*tard(j)
+	returned:=objetivo
+end-function
+
+
+
+
+if(exportarsol) then
+	fclose(F_OUTPUT)
+end-if
+
+end-model

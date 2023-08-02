@@ -1,0 +1,75 @@
+model ModelName
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+
+declarations
+  m,n:integer
+  archivo_datos = "ambulancias.dat"
+ end-declarations
+fopen(archivo_datos,F_INPUT) 
+	readln(m,n)
+
+declarations
+	pdemanda= 1..m
+	pservicio = 1..n
+	cx, cy:array(pservicio)of integer
+	dist:array(pdemanda,pservicio)of real
+	 nc:array(pdemanda)of integer
+	dem:array(pdemanda)of real
+	costo, col:array(pservicio)of integer
+	a:array(pdemanda,pservicio)of integer
+	
+	
+	x:array(pservicio)of mpvar
+end-declarations
+
+!esta lecutra la tendremos en el examen . opciones_lectura_datos
+	forall(j in pservicio)read(costo(j))
+	forall(i in pdemanda)do
+		read(nc(i))
+		forall(j in 1..nc(i))do
+			read(col(j))
+			a(i,col(j)):=1
+		end-do
+	end-do
+
+
+	
+writeln("Problema Set Covering, m = ",m,", n = ",n)
+writeln("Datos: ",archivo_datos)
+
+!Comprobamos que aij está bien leída
+forall(i in pdemanda) do
+writeln
+forall(j in pservicio) write (a(i,j), "\t")
+end-do
+
+! Modelo:
+costo_total:=sum(j in pservicio)costo(j)*x(j)
+forall (i in pdemanda)
+res(i):=sum(j in pservicio) a(i,j)*x(j)>=1 !Garantiza que hay minimo 1 ambulancia para cada region-> setcovering 
+
+forall (j in pservicio) x(j) is_binary
+
+minimize(costo_total)
+
+!Escribir solucion
+writeln("\n")
+writeln("El coste mínimo es: ", getobjval)
+
+!Localizaciones de las ambulancias
+forall(j in pservicio) do
+if (x(j).sol>0.999) then
+writeln ("Se instala la ambulancia en localizacion ", j)
+end-if
+end-do
+
+!Qué localizacion de ambulancia da servicio a cada municipio
+forall (i in pdemanda, j in pservicio) do
+if (a(i,j)=1 and x(j).sol>0.9999) then
+writeln("El municipio ", i , " es atendido por ambulancia localizada en ", j)
+end-if
+end-do
+
+exportprob(EP_MIN,"",costo_total)
+end-model
+

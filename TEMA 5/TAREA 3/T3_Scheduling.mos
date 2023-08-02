@@ -1,0 +1,327 @@
+model ModelName
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+uses "mmsystem";
+
+forward procedure greedy_edd_release
+forward procedure greedy_wspt_release
+forward procedure busqueda_local
+forward function calcularFuncionObjetivo_CTW (orden: array(range) of integer):real !Para la tardanza total ponderada
+
+declarations
+	problema = 4	!1 - Modelo disyuntivo
+					!2 - Modelo de ?ndices de tiempo
+					!3 - Greedy EDD
+					!4 - Greedy WSPT
+	detallarsol = true
+	n=7
+end-declarations
+
+!Para la formulaci?n [F1]
+declarations
+	tareas=1..n
+	p, w, d,rt: array(tareas) of integer
+	x, s, r: array(tareas) of mpvar
+	y: array(tareas, tareas) of mpvar
+	M : integer
+end-declarations
+
+p :: [5,6,8,4,2,4,2]
+d :: [10,21,15,10,5,15,22]
+w :: [3,2,4,4,3,9,9]
+rt :: [2,5,4,0,0,8,9]
+
+M := sum(j in tareas)p(j)+max(j in tareas)(rt(j))
+
+! Para la formulaci?n [F2]
+T := sum(j in tareas) p(j)+max(j in tareas)(rt(j))
+
+declarations
+	tiempos = 1..T
+	x2:array(tareas, tiempos) of mpvar ! Porque ya he utilizado x
+	e:array(tareas, tiempos) of real !usamos la formulaci?n general de funcion objetiva dada para [F2]
+end-declarations
+
+!Importante para llegar al exacto sn problemas
+setparam("XPRS_MIPRELSTOP",0.00000001)
+
+!Imprimir detalles del problema
+
+writeln("Tama?o del problema: ",n)
+
+
+writeln
+if(problema = 1) then
+	writeln("Modelo disyuntivo")
+elif (problema = 2) then
+	writeln("Modelo de ?ndices de tiempo")	
+elif (problema = 3) then
+	writeln("M?todo Greedy EDD + busqueda local")		
+elif (problema = 4) then
+	writeln("M?todo Greedy WSPT+ busqueda local")		
+end-if
+
+
+if(problema = 1) then
+
+	!funcion objetivo
+	obj:=sum(j in tareas)w(j)*(x(j)+p(j))
+	!Restricciones
+	forall(j,k in tareas|j<k)x(j)+p(j)-x(k)<=M*(1-y(j,k))
+	forall(j,k in tareas|j<k)x(k)+p(k)-x(j)<=M*y(j,k)
+	forall(j in tareas)rt(j)<=x(j) !Restriccion de release
+	forall(j in tareas)x(j)>=0
+	forall(j,k in tareas|j<k)y(j,k) is_binary
+	
+	minimize(obj)
+	
+	writeln
+	writeln("N?mero de variables: ",getparam("XPRS_COLS"))
+	writeln("N?mero de restricciones: ",getparam("XPRS_ROWS"))
+	writeln("Cota inferior: ",getparam("XPRS_BESTBOUND"))
+	writeln("Hueco relativo: ",100*(getobjval-getparam("XPRS_BESTBOUND"))/(getobjval))
+	
+	writeln
+	writeln("Valor objetivo: ",getobjval)
+	writeln
+	
+	forall(j in tareas)pos(j):=0
+	forall(j in tareas)xsol(j):=round(x(j).sol)
+	qsort(SYS_UP,xsol,pos)! ordena xsol de forma creciente y lo almacena en pos, similar a order de R
+	
+	
+	forall(j in tareas) do
+		tarea:=pos(j)
+		t1:=xsol(tarea)
+		t2:=xsol(tarea)+p(tarea)
+		writeln("Tarea ",tarea,": ",t1," - ",t2," (tardanza de ",round(r(tarea).sol),")")
+	end-do
+
+elif (problema = 2) then
+	
+	forall(j in tareas) do
+		forall(t in 1..(T-p(j)+1)) do
+			e(j,t):=w(j)*(t-1+p(j)) 
+		end-do
+	end-do
+	
+	obj:=sum(j in tareas, t in 1..(T-p(j)+1))e(j,t)*x2(j,t)
+	forall(j in tareas)sum(t in 1..(T-p(j)+1))x2(j,t)=1 !cada tarea se inicia en un instante de tiempo determinado
+	forall(t in tiempos)sum(j in tareas, m in tiempos | m>=maxlist(0,t-p(j)+1) and m<=t)x2(j,m)<=1 !En cada tiempo, como mucho habr? un trabajo que pueda ser procesado!uso m porque s ocupada
+	forall(j in tareas)forall(t in tiempos|t<=rt(j))x2(j,t)=0 !Restriccion de release
+	forall(j in tareas, t in tiempos)x2(j,t) is_binary
+	
+	minimize(obj)
+	
+	writeln
+	writeln("N?mero de variables: ",getparam("XPRS_COLS"))
+	writeln("N?mero de restricciones: ",getparam("XPRS_ROWS"))
+	writeln("Cota inferior: ",getparam("XPRS_BESTBOUND"))
+	writeln("Hueco relativo: ",100*(getobjval-getparam("XPRS_BESTBOUND"))/(getobjval))
+	
+	writeln
+	writeln("Valor objetivo: ",getobjval)
+	writeln
+	
+	forall(t in tiempos, j in tareas | x2(j,t).sol >= 0.99)do
+		!La tarea j es la siguiente
+		tini:=t-1
+		tfin:=tini+p(j)
+		writeln("Tarea ",j,": ",tini," - ",tfin," (tardanza de ",maxlist(0,tfin-d(j)),")")
+	end-do
+	
+	
+
+elif (problema = 3) then
+	
+	forall(t in tareas)orden(t):=0
+	
+	greedy_edd_release
+		
+	busqueda_local
+		
+	objetivo:=calcularFuncionObjetivo_CTW(orden)
+	
+		
+	writeln(orden)
+	writeln("Valor objetivo: ",objetivo)
+	writeln
+	
+	tiempofin:=0
+	forall(t in tareas)do
+		tarea:=orden(t)
+		tiempofin:=tiempofin+p(tarea)
+		tardiness:=maxlist(0,tiempofin-d(tarea))
+		writeln("Tarea ",tarea,": ",tiempofin-p(tarea)," - ",tiempofin," (tardanza de ",tardiness,")")
+	end-do
+
+
+elif (problema = 4) then
+	
+	forall(t in tareas)orden(t):=0
+	
+	greedy_wspt_release
+		
+	busqueda_local
+		
+	objetivo:=calcularFuncionObjetivo_CTW(orden)
+	
+		
+	writeln
+	writeln("Valor objetivo: ",objetivo)
+	writeln
+	
+	tiempofin:=0
+	forall(t in tareas)do
+		tarea:=orden(t)
+		tiempofin:=tiempofin+p(tarea)
+		tardiness:=maxlist(0,tiempofin-d(tarea))
+		writeln("Tarea ",tarea,": ",tiempofin-p(tarea)," - ",tiempofin," (tardanza de ",tardiness,")")!Mostramos sin ponderar
+	end-do
+	
+	
+end-if
+
+writeln
+
+
+
+!PROCEDIMIENTOS
+procedure busqueda_local
+	
+	final:=0
+	while(final = 0) do
+	
+		!Buscar la mejora m?xima
+		mejoramax:=0.0
+		f_antes:=calcularFuncionObjetivo_CTW(orden)
+		forall(tt1 in tareas, tt2 in tareas | tt1 < tt2) do
+		
+			!TIEMPOS ACUMULADOS HASTA LA POSICIÓN ANTERIOR Y PONER EL NUEVO
+			tiempofin1:=0
+			forall(t in 1..tt1)do
+				if(t<>tt1)then 
+					tarea:=orden(t)
+					tiempofin1:=tiempofin1+p(tarea)
+				end-if
+				if(t=tt1)then
+					tarea:=orden(tt2)
+					tiempofin1:=tiempofin1+p(tarea)
+				end-if
+			end-do
+			
+			tiempofin2:=0
+			forall(t in 1..tt2)do
+				if(t<>tt2)then 
+					tarea:=orden(t)
+					tiempofin2:=tiempofin2+p(tarea)
+				end-if
+				if(t=tt2)then
+					tarea:=orden(tt1)
+					tiempofin2:=tiempofin2+p(tarea)
+				end-if
+			end-do
+			
+			!Probar el intercambio
+			temp:=orden(tt1)
+			orden(tt1):=orden(tt2)
+			orden(tt2):=temp
+
+			!tiempo release en ese intercambio			
+			rel1:=rt(orden(tt1))
+			rel2:=rt(orden(tt2))
+			
+			
+			f_despues:=calcularFuncionObjetivo_CTW(orden)	
+			
+			!Deshacer el intercambio
+			temp:=orden(tt1)
+			orden(tt1):=orden(tt2)
+			orden(tt2):=temp
+			
+			mejora:=f_antes-f_despues
+			
+			if(mejora > mejoramax and (tiempofin1)<=(tiempofin2) and rel1<=(tiempofin1-p(orden(tt2))) and rel2<=(tiempofin2-p(orden(tt1)))) then
+				mejoramax:=mejora
+				t1max:=tt1
+				t2max:=tt2
+			end-if
+		end-do
+		
+		if(mejoramax = 0) then
+			final := 1
+		else
+			!Se hace el intercambio
+			temp:=orden(t1max)
+			orden(t1max):=orden(t2max)
+			orden(t2max):=temp
+		end-if
+		
+	end-do
+	
+end-procedure
+
+procedure greedy_wspt_release
+	
+	forall(t in tareas) criterio(t):=w(t)/p(t)
+	forall(t in tareas) marcado(t):=0
+	forall(t in tareas) orden(t):=0
+	sProc:=0
+	forall(i in 1..n)do
+		
+		tmax:=0
+		cmax:=-999999999.
+		forall(t in tareas | marcado(t) = 0) do !ordenar decreciente w(t)/p(t) <-> ordenar creciente p(t)/w(t)
+			if(criterio(t) >= cmax and rt(t)<=sProc) then
+				tmax:=t
+				cmax:=criterio(t)
+			end-if
+		end-do
+		sProc:=sProc+p(tmax)
+		marcado(tmax):=1
+		orden(i):=tmax
+		
+	end-do
+	
+end-procedure
+
+
+
+procedure greedy_edd_release
+	
+	forall(t in tareas) criterio(t):=d(t)!criterio greedy
+	forall(t in tareas) marcado(t):=0!Ninguna tarea esta en la solucion
+	forall(t in tareas) orden(t):=0!No hay orden entre las tareas
+	sProc:=0
+	forall(i in 1..n)do
+		
+		tmin:=0
+		cmin:=99999999999999.9
+		
+		forall(t in tareas | marcado(t) = 0) do
+			if(criterio(t) < cmin and sProc>=rt(t)) then
+				tmin:=t
+				cmin:=criterio(t)
+			end-if
+		end-do
+		sProc:=sProc+p(tmin)
+		marcado(tmin):=1
+		orden(i):=tmin
+		
+		
+	end-do
+	
+end-procedure
+
+function calcularFuncionObjetivo_CTW (orden: array(range) of integer):real
+	tiempofin:=0
+	forall(t in tareas)CT(t):=0.0
+	forall(t in tareas) do
+		tarea:=orden(t)
+		tiempofin:=tiempofin+p(tarea)
+		CT(tarea):=tiempofin
+	end-do
+	objetivo:=sum(j in tareas)w(j)*CT(j)
+	returned:=objetivo
+end-function
+
+end-model

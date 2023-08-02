@@ -1,0 +1,66 @@
+!!!!!!!!!!!!!!!!!!!!!!!!!Solucion de construccion
+
+model "TSP-1"
+uses "mmive"
+
+declarations
+n:integer
+datos = "tsp_60_1.txt"
+end-declarations
+
+fopen (datos, F_INPUT)
+	read(n)
+	declarations
+		nodos = 1..n
+		dist:array(nodos, nodos)of integer !no redondeamos distancias
+		cx, cy, visitado, s:array(nodos)of integer
+		nvisit:integer
+		
+	end-declarations
+	
+		forall(i in nodos)read(i, cx(i), cy(i))
+	fclose(F_INPUT)	
+		forall(i,j in nodos)dist(i,j):=round(sqrt((cx(i)-cx(j))^2+(cy(i)-cy(j))^2))
+writeln("cx:", cx)!para ver si estan bien leidos los datos
+
+writeln("Problema TSP, n=", n, ", datos: ", datos)
+writeln("Heuristica del entorno mas cercano")
+
+ini:=1
+visitado(ini):=1
+actual:=ini
+nvisit:=1
+zheur:=0
+
+while(nvisit < n)do
+	!encontrar el entorno mas cercano
+	dmin:=999999
+	forall(i in nodos|visitado(i)=0)do
+
+		if (dist(actual, i) < dmin) then
+		dmin:=dist(actual,i)
+		imin:=i
+		end-if
+	end-do
+	visitado(imin):=1
+	s(actual):=imin !siguiente al nodo actual
+	zheur:=zheur+dist(actual, imin)	
+	nvisit:=nvisit+1
+	actual:=imin
+end-do
+
+!cerrar el ciclo
+zheur:=zheur+dist(actual, ini)
+s(actual):=ini
+	
+writeln("Solucion entrono mas proximo: ", zheur)
+
+!Hacemos la grafica
+
+i1:=IVEaddplot("puntos", IVE_BLACK)
+i2:=IVEaddplot("lineas", IVE_RED)
+forall(i in nodos)IVEdrawpoint(i1,cx(i),cy(i))
+forall(i in nodos)IVEdrawlabel(i1,cx(i), cy(i), ""+i)
+forall(i in nodos)IVEdrawline(i2,cx(i),cy(i), cx(s(i)), cy(s(i)))
+
+end-model

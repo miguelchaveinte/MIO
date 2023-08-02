@@ -1,0 +1,254 @@
+! Heurística de inserción en paralelo para CVRP
+! Algoritmo de Campbell-Savelsbergh
+
+model "Heurística de inserción en paralelo"
+
+uses "mmsystem"
+uses "mmive"
+
+forward procedure dibujar_rutas(nr:integer, nnr:array(range)of integer, indr:array(range,range)of integer)
+
+
+declarations
+   	n:integer
+   	m:integer
+   
+   	!archivo_datos = "datos_eilon/eilon_30_3.dat"
+   	
+   	archivo_datos = "E072-04f.dat"
+   
+   	
+	formato_datos = 2	! =1 datos de Eilon-Christofides, =2 datos Euclídeos con coordenadas
+	nombre:string
+end-declarations
+
+
+fopen(archivo_datos,F_INPUT)
+if(formato_datos = 1)then
+	read(n)
+	read(m)
+elif(formato_datos = 2)then
+	read(nombre)
+	read(n)
+	read(m)
+end-if
+declarations
+	puntos=1..n
+	cap:integer
+	cx:array(puntos) of integer
+	cy:array(puntos) of integer
+	dist:array(puntos,puntos) of real
+	dem:array(puntos) of integer
+	
+	rutas:range
+	dist_ruta:array(rutas)of real
+	carga:array(rutas)of integer
+	nnr:array(rutas)of integer
+	indr:array(range,rutas)of integer
+	visitado:array(puntos)of integer
+	nvis:integer
+	costo:array(puntos,range,range)of real
+	base =1
+
+			
+	
+	ik, jk, rk, jaux:integer
+	dist_total, daux, dmin:real
+	
+	nodo_inicial = 1		! =1 el más alejado, =2 el más cercano
+	
+	grafico = 2
+	
+end-declarations
+
+if(formato_datos=1)then
+  	forall(i in puntos)do
+  		read(ik)
+  		read(dem(i))
+	end-do
+	forall(i in puntos,j in puntos)read(dist(i,j)) 
+	read(cap)
+	
+elif(formato_datos=2)then
+  	read(cap)
+  	forall(i in puntos)read(i,cx(i),cy(i))
+  	forall(i in puntos)read(i,dem(i))
+  	forall(i,j in puntos|i<>j)dist(i,j):=sqrt((cx(i)-cx(j))^2+(cy(i)-cy(j))^2)
+end-if	
+
+fclose(F_INPUT)
+
+forall(i in puntos)dist(i,i):= 0.
+
+!forall(i,j in puntos)writeln("\nDistancia(",i,",",j,")= ",dist(i,j))
+!forall(i in puntos) writeln(i, ", ", cx(i), " , ", cy(i))
+!forall(i in puntos) writeln(i, ",Dem= ", dem(i))
+
+
+writeln("Problema de routing con capacidades  CVRP, \nn = ",n,", m = ",m)
+writeln("Datos: ",archivo_datos)
+writeln("\nCapacidad = ",cap)
+dem_total:=sum(i in puntos)dem(i)
+writeln("Minimo numero de vehiculos: ",ceil(dem_total/cap))
+writeln("\n\n(1) Heuristica de insercion en paralelo")
+t1:=gettime
+writeln
+!========= Algoritmo de Campbell-Savelsbergh ===================================
+! Inicializaciones:
+
+dist_total:=0.
+nvis:=1
+visitado(base):=1
+
+! Ruta inicial con el nodo más alejado o el más cercano como semilla
+	
+if(nodo_inicial =1)then
+	   daux:=-9999.9
+	   forall(j in puntos|visitado(j)=0)do
+	      if(dist(base,j)>daux)then
+	          daux:=dist(base,j)
+	          jaux:=j
+	      end-if
+	   end-do	
+elif(nodo_inicial = 2)then
+	   daux:=9999.9
+	   forall(j in puntos|visitado(j)=0)do
+	      if(dist(base,j)<daux)then
+	          daux:=dist(base,j)
+	          jaux:=j
+	      end-if
+	   end-do
+end-if
+visitado(jaux):=1
+nvis:=nvis+1
+nr:=1
+carga(nr):=dem(jaux)
+nnr(nr):=2
+indr(1,nr):=base
+indr(2,nr):=jaux
+dist_ruta(nr):=dist(base,jaux)+dist(jaux,base)
+
+while(nvis < n)do
+	dmin:=99999.9
+	forall(j in puntos|j<>base and visitado(j)=0)do
+	   forall(r in 1..nr|dem(j)+carga(r)<=cap)do
+	      forall(i in 1..nnr(r)-1)do
+	         ! costo de insertar el nodo j después de la posición i de la ruta r
+	         costo(j,r,i):= 
+	            dist(indr(i,r),j)+dist(j,indr(i+1,r))-dist(indr(i,r),indr(i+1,r))
+	            if(costo(j,r,i)<dmin)then
+	      		   dmin:=costo(j,r,i)
+	      		   jk:=j
+	      		   rk:=r
+	      		   ik:=i
+	      		end-if
+	      end-do  
+	      !En caso de que sea el ultimo
+   		   costo(j,r,nnr(r)):= dist(indr(nnr(r),r),j)+dist(j,base)-dist(indr(nnr(r),r),base)
+	      	if(costo(j,r,nnr(r))<dmin)then
+	      		   dmin:=costo(j,r,nnr(r))
+	      		   jk:=j
+	      		   rk:=r
+	      		   ik:=nnr(r)
+	      	end-if
+		  
+	   end-do
+	   ! costo de insertar el nodo j en una nueva ruta
+	   if(dist(base,jk)+dist(jk,base)<dmin)then
+	      nueva_ruta:=1
+	      jk:=j
+	   else
+	   	   nueva_ruta:=0
+	   end-if
+	end-do   ! forall(j in puntos|j>1 and visitado(j)=0)
+	
+	if(nueva_ruta = 0)then
+	   ! inserto el nodo jk después de la posición ik de la ruta rk
+	   !================================================================
+	    nn:=nnr(rk)
+   	     forall(i in 1..nnr(rk))copia(i):=indr(i,rk)
+   	    
+   	     nnr(rk):=nnr(rk)+1!Habrá un nodo más
+   	     indr(ik+1,rk):=jk!El nodo jk
+   	     if(ik<nn)then
+   	        forall(i in ik+1..nn)indr(1+i,rk):=copia(i)
+   	     end-if
+   	     visitado(jk):=1
+   	     nvis:=nvis+1
+   	     carga(rk):=carga(rk)+dem(jk)
+   	     
+   	     
+   	     if(ik<nn)then
+   	        dist_ruta(rk):=dist_ruta(rk)+ 
+   	     	dist(indr(ik,rk),indr(ik+1,rk))+
+   	     	dist(indr(ik+1,rk),indr(ik+2,rk))-
+   	     	dist(indr(ik,rk),indr(ik+2,rk))
+   	     else
+   	     	dist_ruta(rk):=dist_ruta(rk)+      	
+   	     	dist(indr(ik,rk),jk)+
+   	     	dist(jk,base)-
+   	     	dist(indr(ik,rk),base)
+   	     end-if
+	else
+		
+		! inicio nueva ruta con semilla en jk
+		!=====================================
+		nr:=nr+1
+		visitado(jk):=1		
+		nvis:=nvis+1
+		carga(nr):=dem(jk)
+		nnr(nr):=2
+		indr(1,nr):=base
+		indr(2,nr):=jk
+		dist_ruta(nr):=dist(base,jk)+dist(jk,base)
+	end-if
+	   
+end-do   ! final de while(nvis < n)
+
+!================= Salida final fase 1 ==========================
+
+dist_total:=sum(r in 1..nr)dist_ruta(r)
+writeln("\nDistancia total = ",dist_total)
+writeln("Número de rutas: ",nr,". Rutas:")
+writeln("\nr\tdist\tcarga\tpuntos\n")
+forall(r in 1..nr)do
+   write("\n",r,"\t",strfmt(dist_ruta(r),6,2),"\t",carga(r),"\t")
+   forall(i in 1..nnr(r))write(indr(i,r),"-")
+   write("1")
+end-do
+
+writeln("\n\nTiempo = ",gettime-t1)
+
+if(grafico = 2 and formato_datos = 2)then
+	dibujar_rutas(nr, nnr, indr)
+end-if
+
+
+!====================================================================
+procedure dibujar_rutas(nr:integer, nnr:array(range)of integer, indr:array(range,range)of integer)
+	
+	id1:=IVEaddplot("puntos",IVE_BLACK)
+	forall(j in puntos)IVEdrawpoint(id1,cx(j),cy(j))
+	
+	
+	colores:={IVE_BLUE, IVE_CYAN, IVE_GREEN, IVE_MAGENTA, IVE_RED, IVE_WHITE, IVE_YELLOW}
+	ncolor:=1
+	forall(k in 1..nr) do
+		id(k):=IVEaddplot("ruta",colores(ncolor))
+		ncolor:=ncolor+1
+		if(ncolor = 7) then
+			ncolor:=1
+		end-if
+	end-do
+	
+	
+	forall(k in 1..nr)do
+		forall(j in 1..nnr(k)-1)IVEdrawline(id(k),cx(indr(j,k)),cy(indr(j,k)),cx(indr(j+1,k)),cy(indr(j+1,k)))
+		IVEdrawline(id(k),cx(indr(nnr(k),k)),cy(indr(nnr(k),k)),cx(indr(1,k)),cy(indr(1,k)))
+	end-do
+	
+end-procedure
+
+
+end-model   
+

@@ -1,0 +1,105 @@
+!P4 Scheduling
+model ModelName
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+uses "mmsystem";
+
+declarations
+	problema = 1     !1 = makespan; 2 = Tardanza total ponderada
+	datos = "datosImprenta3.txt"
+	n: integer
+	m = 2
+end-declarations
+
+fopen(datos,F_INPUT)
+
+read(n)
+
+!! importante ver en las salidas las interrupciones para el balanceo de carga
+
+!Para la formulación [F2]
+declarations
+	
+	tareas=1..n
+	maquinas=1..m
+	p, w, d, r: array(tareas) of integer
+end-declarations
+
+forall(j in tareas)read(p(j),w(j),d(j),r(j))  !revisar esto porque en el examen el fichero puede cambiar de orden
+
+fclose(F_INPUT)
+
+T := sum(j in tareas)p(j)+max(j in tareas)(r(j))
+
+declarations
+	periodos = 1..T
+	x:array(maquinas, tareas, periodos)	of mpvar
+	c:array(tareas) of mpvar !definir los Cj
+	tardiness:array(tareas) of mpvar 
+	cmax: mpvar !para linealizar la función objetivo
+end-declarations
+
+
+tiempo:=gettime
+
+
+writeln("Problema de scheduling en paralelo")
+writeln(m," máquinas")
+writeln(n," tareas")
+writeln("Límite de tiempo: ",T)
+writeln
+
+if(problema = 1) then
+	writeln("Minimizar el makespan")
+elif (problema = 2) then	
+	writeln("Minimizar wT")
+end-if
+
+
+if(problema = 1) then
+	!funcion objetivo del problema 1 
+	objetivo:=cmax
+	
+	!restriccion propia del problema 1
+	forall(j in tareas) cmax>=c(j)
+	  
+	elif(problema = 2) then
+	!funcion objetivo del problema 2
+	objetivo:=sum(j in tareas) w(j)*tardiness(j)
+	!restriccion propia del problema 2
+	forall(j in tareas) tardiness(j)>=c(j)-d(j)
+	forall(j in tareas) tardiness(j)>=0
+	 
+end-if
+
+forall(j in tareas)c(j) = sum(i in maquinas, t in 1..(T-p(j)+1))(t-1+p(j))*x(i,j,t)
+forall(j in tareas)sum(i in maquinas, t in 1..(T-p(j)+1))x(i,j,t)=1
+forall(i in maquinas, t in 1..T)sum(j in tareas, h in 1..T | h >= maxlist(1,t-p(j)+1) and h <= t)x(i,j,h) <= 1
+forall(j in tareas)sum(i in maquinas, t in 1..(r(j)))x(i,j,t)=0!Tenemos tiempo de release -> por tener release esta restriccion
+forall(i in maquinas, j in tareas, t in 1..T)x(i,j,t) is_binary
+
+
+minimize(objetivo)
+
+
+writeln
+writeln("Número de variables: ",getparam("XPRS_COLS"))
+writeln("Número de restricciones: ",getparam("XPRS_ROWS"))
+writeln("Cota inferior: ",getparam("XPRS_BESTBOUND"))
+writeln("Hueco relativo: ",100*(getobjval-getparam("XPRS_BESTBOUND"))/(getobjval))
+	
+writeln("Valor objetivo: ", getobjval)
+writeln
+forall(i in maquinas) do
+	writeln("MÁQUINA ",i)
+	forall(t in 1..T, j in tareas| x(i,j,t).sol > 0.99) do
+		if(t <= T-p(j)+1) then
+			tini:=t-1
+			tfin:=c(j).sol
+			writeln("Tarea ",j,": ",tini," --- ",tfin," (tardanza de ",maxlist(1,tfin-d(j)),")")
+		end-if
+	end-do
+	writeln
+end-do
+writeln
+
+writeln("Tiempo empleado: ",gettime-tiempo)

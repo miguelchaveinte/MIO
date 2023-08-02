@@ -1,0 +1,91 @@
+procedure scp_threshold_accepting
+scp_metodo_greedy
+scp_eliminacion_pservicio_redundantes
+zmejor:=zheur
+xmejor:=xsol
+
+iter:=0
+umbral:=umbral_ini
+cont:=0
+final:=0
+
+while(final=0)do
+	iter:=iter+1
+	cont:=cont+1
+	zheur:=sum(j in pservicio)costo(j)*xsol(j)
+	scp_intercambio_aleatorio
+	if(zheur1<=zheur)then
+		xsol:=xsol1
+		if(zheur1<zmejor)then
+			zmejor:=zheur1
+			xmejor:=xsol1
+			writeln("\nIteracion de mejora ", iter, ", zheur = ",zheur1, ", umbral = ", umbral)
+			cont:=0
+		end-if
+	else
+		if(cont<=nfijo)then
+			if(zheur1<=zheur+umbral)then 
+				xsol:=xsol1
+			end-if
+		else
+			umbral:=umbral*alpha
+			cont:=4
+		end-if
+	end-if
+	if(iter>iter_max or umbral<umbral_fin)then 
+		final:=1
+	end-if
+end-do
+writeln("\nSolucion final: \nZmejor = ",strfmt(zmejor,10,2), ", iter = ", iter, ", umbral = ", umbral)
+end-procedure
+
+
+procedure scp_simulated_annealing
+	
+writeln("\n(4) Heuristica Simulated Annealing")
+writeln("temp_ini = ",temp_ini,", alpha = ",alpha,", nfijo = ",nfijo)
+
+! solucion inicial
+
+scp_metodo_greedy
+scp_eliminacion_pservicio_redundantes
+zmejor:=zheur
+xmejor:=xsol
+
+iter:=0
+temp:=temp_ini
+cont:=0
+final:=0
+
+while(final=0)do
+     iter:=iter+1
+     cont:=cont+1    
+     zheur:=sum(j in pservicio)costo(j)*xsol(j)
+    scp_intercambio_aleatorio
+	if(zheur1<=zheur)then
+		zheur:=zheur1
+		xmejor:=xsol1
+		writeln("\nIteracion de mejora ",iter,", zheur = ",zheur1,", temp = ",temp, ", zmejor = ", zheur)
+		cont:=0
+	else
+		if(cont<=nfijo)then
+			ran:=random
+			pn:=exp(-(zheur1-zheur)/temp)	
+			if(ran<=pn)then 
+				xsol:=xsol1
+			end-if
+		else
+			temp:=alpha*temp
+			cont:=0
+		end-if	
+	end-if
+
+     if(iter > iter_max or temp < temp_fin)then 
+       final:=1
+     end-if
+  end-do 
+  writeln("\nSolucion final: \nzmejor = ",strfmt(zmejor,10,2),", iter = ",iter,", temp = ",strfmt(temp,8,5))
+end-procedure
+
+
+

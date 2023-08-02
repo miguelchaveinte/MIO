@@ -1,0 +1,337 @@
+!T4 Schduling
+model ModelName
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+uses "mmsystem";
+forward procedure greedy_lpt
+forward procedure busqueda_local_par
+forward function pertenece(elemento:integer, conjunto:array(range) of integer):boolean
+forward function calcular_funcion_objetivo(procesado:array(range) of integer):integer
+
+declarations
+	datos = "sched_10_1.txt"
+	problema = 2    !1 - exacto
+					 !2 - greedy LPT + búsqueda local
+	m = 3
+	limiteTiempo = 60
+	maquinas = 1..m
+end-declarations
+
+entrada := datos
+
+
+declarations
+	n: integer
+end-declarations
+
+fopen(entrada,F_INPUT)
+
+read(n)
+
+declarations
+	tareas=1..n
+	p, w, d: array(tareas) of integer
+end-declarations
+
+forall(j in tareas)read(p(j),w(j),d(j))
+
+fclose(F_INPUT)
+
+T:=sum(j in tareas)p(j)
+
+declarations
+	periodos = 1..T
+	x:array(maquinas, tareas, periodos)	of mpvar
+	c:array(tareas) of mpvar
+	cmax: mpvar
+end-declarations
+
+tiempo:=gettime
+
+writeln("Problema de scheduling en paralelo")
+writeln(m," máquinas")
+writeln(n," tareas")
+writeln
+if(problema = 1) then
+	writeln("Resolución exacta")
+	if(limiteTiempo <> 0) then
+		writeln("Tiempo limitado a ",limiteTiempo," segundos")
+		setparam("XPRS_MAXTIME",limiteTiempo)
+	end-if
+end-if
+
+
+if(problema = 1) then
+	!funcion objetivo
+	objetivo := cmax
+	!restricciones propias del problema
+	forall(j in tareas)cmax >= c(j)
+	
+	!restricciones de la formulacion [F2]
+	forall(j in tareas)c(j) = sum(i in maquinas, t in 1..(T-p(j)+1))(t-1+p(j))*x(i,j,t)
+	forall(j in tareas)sum(i in maquinas, t in 1..(T-p(j)+1))x(i,j,t)=1
+	forall(i in maquinas, t in 1..T)sum(j in tareas, h in 1..T | h >= maxlist(1,t-p(j)+1) and h <= t)x(i,j,h) <= 1
+	forall(i in maquinas, j in tareas, t in 1..T)x(i,j,t) is_binary
+
+	minimize(objetivo)
+	
+	
+	writeln
+	writeln("Número de variables: ",getparam("XPRS_COLS"))
+	writeln("Número de restricciones: ",getparam("XPRS_ROWS"))
+	writeln("Cota inferior: ",getparam("XPRS_BESTBOUND"))
+	writeln("Hueco relativo: ",100*(getobjval-getparam("XPRS_BESTBOUND"))/(getobjval))
+	
+	writeln("Valor objetivo: ", getobjval)!o restar 1 aqui
+	writeln
+	forall(i in maquinas) do
+		writeln("MÁQUINA ",i)
+		forall(t in 1..T, j in tareas| x(i,j,t).sol > 0.99) do
+			if(t <= T-p(j)+1) then
+				tini:=t-1
+				tfin:=c(j).sol
+				writeln("Tarea ",j,": ",tini," --- ",tfin," (retraso de ",maxlist(1,tfin-d(j)),")")!funcion minlist y maxlist son importantes en este problema
+			end-if
+		end-do
+		writeln
+	end-do
+	writeln
+	
+
+elif(problema = 2) then
+	
+	!Inicializacion de tareas por máquina
+	forall(j in tareas)maquina1(j):=0
+	forall(j in tareas)maquina2(j):=0
+	forall(j in tareas)maquina3(j):=0
+	!Inicializacion de tiempos de finalizacion de tareas por máquina
+	finMaquina1 := 0
+	finMaquina2 := 0
+	finMaquina3 := 0
+	
+	!Heurística Greedy LPT 
+	greedy_lpt
+	
+	!Búsqueda local
+	busqueda_local_par
+	
+	writeln("Resolución heurística: método Greedy LPT + intercambios")
+	zheur:=maxlist(finMaquina1,finMaquina2,finMaquina3)
+	writeln("Valor objetivo: ",zheur)
+	writeln
+	writeln("MÁQUINA 1")
+	ind:=1
+	tpo:=0
+	while(maquina1(ind) <> 0) do
+		writeln("Tarea ",maquina1(ind),": ",tpo," --- ",tpo+p(maquina1(ind))," (retraso de ",maxlist(tpo+p(maquina1(ind))-d(maquina1(ind)),0),")")
+		tpo := tpo + p(maquina1(ind))
+		ind:=ind+1
+	end-do
+	writeln
+	writeln("MÁQUINA 2")
+	ind:=1
+	tpo:=0
+	while(maquina2(ind) <> 0) do
+		writeln("Tarea ",maquina2(ind),": ",tpo," --- ",tpo+p(maquina2(ind))," (retraso de ",maxlist(tpo+p(maquina2(ind))-d(maquina2(ind)),0),")")
+		tpo := tpo + p(maquina2(ind))
+		ind:=ind+1
+	end-do
+	writeln
+	writeln("MÁQUINA 3")
+	ind:=1
+	tpo:=0
+	while(maquina3(ind) <> 0) do
+		writeln("Tarea ",maquina3(ind),": ",tpo," --- ",tpo+p(maquina3(ind))," (retraso de ",maxlist(tpo+p(maquina3(ind))-d(maquina3(ind)),0),")")
+		tpo := tpo + p(maquina3(ind))
+		ind:=ind+1
+	end-do
+
+	
+	
+end-if
+
+	
+
+
+writeln("Tiempo empleado: ",gettime-tiempo)
+
+
+
+!PROCEDIMIENTOS
+
+procedure greedy_lpt
+	
+	!1.-Ordenar de más a menos tiempos de procesado de las tareas
+	forall(j in tareas) orden(j):=0
+	qsort(SYS_DOWN,p,orden) ! se almacena en orden las posiciones de p,ordenando decreciente
+	write(orden)
+	write(p)
+	
+	!2.-Recorrer todas las tareas (bucle) e ir asinadolas a cada máquina
+	i1:=0
+	i2:=0
+	i3:=0
+	forall(i in 1..n) do
+		
+		!2.1.-Seleccionamos la tarea actual
+		tareaActual:=orden(i)
+		
+		!2.2.-Buscamos la máquina de menor carga con minlist y marcamos la maquina asignada
+		finMinimo:=minlist(finMaquina1,finMaquina2,finMaquina3)
+		write("Tarea ",tareaActual," asignada a ")
+		
+		if(finMinimo = finMaquina1) then
+			maquinaAsignada:=1
+			writeln("máquina 1")
+		elif(finMinimo = finMaquina2) then
+			maquinaAsignada:=2
+			writeln("máquina 2")
+		else
+			maquinaAsignada:=3
+			writeln("máquina 3")
+		end-if
+		
+		!2.3.-Se asigna el trabajo a la máquina correspondiente, asiganda en el paso anterior. 
+		!Actualizar nº de tareas en la maquina, la posicion de la tarea en la maquina; tiempo de procesado de la maquina
+		if(maquinaAsignada = 1) then
+			i1:=i1+1
+			maquina1(i1):=tareaActual
+			finMaquina1:=finMaquina1 + p(tareaActual)
+		elif (maquinaAsignada = 2) then
+			i2:=i2+1
+			maquina2(i2):=tareaActual
+			finMaquina2:=finMaquina2 + p(tareaActual)
+		else
+			i3:=i3+1
+			maquina3(i3):=tareaActual
+			finMaquina3:=finMaquina3 + p(tareaActual)
+		end-if
+
+		
+	end-do
+	
+	
+end-procedure
+
+
+
+
+procedure busqueda_local_par
+	
+	!Vamos a crear un array que indica qué maquina procesa qué tarea
+	forall(j in tareas) do
+		if(pertenece(j,maquina1)) then
+			procesado(j):=1
+		elif(pertenece(j,maquina2)) then
+			procesado(j):=2
+		else
+			procesado(j):=3	
+		end-if
+	end-do
+	
+	final:=0
+	while(final = 0) do
+	
+		!Determinamos el par de tareas de distinta maquinas tal que
+		!su intercambio produce la mejora máxima
+		mejoramax:=0
+		jmax:=0
+		smax:=0
+		forall(j,s in tareas | procesado(j) <> procesado(s)) do !tareas diferentes maquinas
+			
+			!El valor de la función objetivo antes es
+			val_antes:=calcular_funcion_objetivo(procesado) !ojo que aqui esta la clave y cambiar dependienco de la funcion 
+			
+			!Probamos a hacer el intercambio
+			aux:=procesado(j)
+			procesado(j):=procesado(s)
+			procesado(s):=aux
+			val_despues:=calcular_funcion_objetivo(procesado)
+			
+			!Deshacemos el intercambio
+			aux:=procesado(j)
+			procesado(j):=procesado(s)
+			procesado(s):=aux
+			
+			mejora:=val_antes-val_despues
+			if(mejora > mejoramax) then
+				mejoramax:=mejora
+				jmax:=j
+				smax:=s
+			end-if
+		end-do
+		
+		if(mejoramax > 0) then
+			!Hacer el intercambio
+			aux:=procesado(jmax)
+			procesado(jmax):=procesado(smax)
+			procesado(smax):=aux
+			!writeln("Intercambio ",jmax," con ",smax)
+		else
+			final:=1	
+		end-if
+		
+	end-do
+	
+	!Lo convertimos al formato anterior porque lo necesitamos para la salida
+	
+	forall(j in tareas)maquina1(j):=0
+	forall(j in tareas)maquina2(j):=0
+	forall(j in tareas)maquina3(j):=0
+	finMaquina1 := 0
+	finMaquina2 := 0
+	finMaquina3 := 0
+	
+	forall(j in tareas) orden(j):=0
+	qsort(SYS_DOWN,p,orden)
+	
+	i1:=0
+	i2:=0
+	i3:=0
+	forall(i in 1..n) do
+		
+		tareaActual:=orden(i)
+		maquinaAsignada:=procesado(tareaActual)
+		
+		!Se asigna el trabajo a la máquina correspondiente
+		if(maquinaAsignada = 1) then
+			i1:=i1+1
+			maquina1(i1):=tareaActual
+			finMaquina1:=finMaquina1 + p(tareaActual)
+		elif (maquinaAsignada = 2) then
+			i2:=i2+1
+			maquina2(i2):=tareaActual
+			finMaquina2:=finMaquina2 + p(tareaActual)
+		else
+			i3:=i3+1
+			maquina3(i3):=tareaActual
+			finMaquina3:=finMaquina3 + p(tareaActual)		
+		end-if
+
+		
+	end-do	
+
+end-procedure
+
+
+function pertenece(elemento:integer, conjunto:array(range) of integer):boolean
+	returned:=FALSE
+	forall(i in 1..n)do
+		if(conjunto(i) = elemento) then
+			returned:=TRUE
+		end-if
+	end-do
+end-function
+
+function calcular_funcion_objetivo(procesado:array(range) of integer):integer!no estamos en un problema minimizacion, podemos definirla directamente
+	forall(j in 1..3) do !dependerá del nº de máquinas
+		mm(j):=0!inicializacion de tiempos de procesado de cada máquina
+	end-do
+	forall(j in tareas) do
+		maq:=procesado(j)
+		mm(maq):=mm(maq)+p(j)
+	end-do
+	returned:=(maxlist(mm(1),mm(2),mm(3))) !me quedo con el maximo por ser cmax
+end-function
+
+
+end-model

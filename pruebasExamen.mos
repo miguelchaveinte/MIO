@@ -1,0 +1,134 @@
+
+	
+!------- CUBRIMEINTO MAXIMO ------------
+demandacubierta:=0
+forall(t in 1..p) do
+	forall(j in pservicio| xsol(j):=0) do
+		Z(j):=0
+		forall(i in pdemanda) do
+			if(cubierto(i)=0 and a(i,j)=1) then
+				Z(j)=Z(j)+dem(i)
+			end-if
+		end-do
+	end-do
+	zmax:=-9999
+	forall(j in pservicions | xsol(j)=0) do
+		if(Z(j)>zmax)then
+			zmax:=Z(j)
+			jmax:=j
+		end-if
+	end-do
+	xsol(jmax):=1
+	forall(i in pdemanda) do
+		 if(cubierto(i)=0 and a(i,jmax)=1) then
+		 	cubierto(i):=1
+		 	demandacubierta:=demandacubierta+dem(i)
+		 end-if
+	end-do			
+end-do
+! busqueda_local_2; demandacubierta:=demanda_que_cubre(xsol)
+procedure busqueda_local_2
+	final:=0
+	while (final=0) do
+		zheur:=demanda_que_cubre(xsol)
+		mejoramax:=-999
+		forall(i in pdemanda,j in pservicio | xsol(i)=1 and xsol(j)=0) do
+			xsolp:=xsol
+			xsolp(i):=0
+			xsolp(j):=1
+			zheurp:=demanda_que_cubre(xsolp)
+			mejorap:=zheurp-zheur
+			if(mejorap>mejoramax) then
+				mejoramax:=mejorap
+				imax=i
+				jmax=j
+			end-if
+		end-do
+		if(mejoramax<=0)then
+			final:=1
+		else
+			xsol(imax):=0
+			xsol(jmax):=1
+			zheur:=zheur+mejora
+		end-if
+	end-do
+	!------- P MEDIANA ------------
+	procedure greedy_pmediana 
+		declarations
+			Z:array(pservicio) of integer
+			dact:array(pdmemanda) of integer
+			xsol:array(pservicio) of integer
+			ind_ab:array(1..p)of integer
+			BIGM:999999
+		end-declarations
+		forall(j in pservicio)xsol(j):=0
+		forall(i in pdemanda)dact(i):=BIGM
+		forall(k in 1..p)do
+			forall(j in pservicio | xsol(j)=0) do
+				Z(j):=0
+				forall( i pdemanda) do
+					if(dist(i,j)<dact(i)) then
+						Z(j):=Z(j)+dist(i,j)
+					else
+						Z(j):=Z(j)+dact(i)
+					end-if
+				end-do
+			end-do
+			dist_min:=99999
+			forall(j in pservicio | xsol(j)=0)do
+				if(Z(j)<dist_min)then
+					dist_min:=Z(j)
+					jmin:=j
+				end-if
+			end-do
+			xsol(jmin):=1
+			ind_ab(k):=jmin
+			forall(i in pdemanda) do
+				dact(i):=minlist(dist(i,jmin),dact(i))
+			end-do
+		end-do
+		z_greedy:=sum(i in pdemanda) dact(i)*dem(i)
+				
+!SA PMEDIANA				
+iter:=0
+temp:=temp_ini
+cont:=0
+final:=0
+zheur:=z_greedy
+zmejor:=zheur
+t1:=gettime
+
+while(final=0)do
+     iter:=iter+1
+     cont:=cont+1    
+     zheur:=calcular_obj(xsol)
+     intercambio_aleatorio(xsol)
+     xsolp:=xsol
+     xsolp(jp):=0
+     xsolp(kp):=1
+     zheur1:=calcular_obj(xsolp)
+    if(zheur1<zheur)then
+    	xsol:=xsolp
+    	if(zheur1<zmejor)then
+    		zmejor:=zheur1
+    		xmejor:=xsolp
+    		writeln("\nIteracion ",iter,", zheur = ",zheur1)
+    		cont:=0
+    	end-if
+    else
+    	if(cont<=nfijo)then
+    		ran:=random
+    		pn:=exp(-(zheur-zheur1)/temp)		
+    		if(ran<=pn)then  
+    			xsol:=xsolp
+    		end-if  		
+    	else
+    		temp:= alpha*temp
+    		cont:=0
+    	end-if
+    end-if    
+    if(iter > iter_max or temp < temp_fin)then ! or temp<tol
+    	final:= 1
+    end-if    
+end-do
+		

@@ -1,0 +1,52 @@
+! Practica 2 Scheduling
+model P2_F1
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+
+
+!sample declarations section
+declarations
+	n = 3 
+	tareas = 1..n
+	p,d,w : array(tareas) of integer
+	s,t,x : array(tareas) of mpvar!s->adelanto; t->retraso : por linealización 
+	y : array(tareas,tareas) of mpvar ! 1 si j precede a k ... como en la teoriua
+end-declarations
+
+! Incluimos los datos directamente
+p :: [5,20,15]; 
+d :: [25,22,35];
+w :: [19,12,34];
+
+!Necesito definir la cota superior para la F1
+M := sum(j in tareas)(p(j))!+max(r_j), que en este caso no hay
+
+!Defino la funcion objetivo: tardanza total ponderada
+obj:=sum(j in tareas)(w(j)*t(j))
+
+!restricciones relativas a la fecha de entrega (linealizacion)
+forall(j in tareas)res_lin1(j):=t(j)>=0
+
+forall(j in tareas)res_lin2(j):=t(j)-s(j)=x(j)+p(j)-d(j)
+
+forall(j in tareas)res_lin3(j):= s(j)>=0
+
+! Restricciones relativas al orden de los trabajos
+forall(j,k in tareas |j<k) fd1(j,k):=x(j)+p(j)-x(k)<=M*(1-y(j,k))
+
+forall(j,k in tareas |j<k) fd2(j,k):=x(k)+p(k)-x(j)<=M*y(j,k)
+
+!2.3 no se incluye pq no tenemos release restriccion
+
+!restricciones de las variables 
+forall(j in tareas) x(j)>=0
+
+forall(j,k in tareas |j<k) y(j,k) is_binary
+
+minimize(obj)
+writeln
+writeln("wT=", obj.sol)
+writeln ("j\tx\tC\ts\tr\td\n")!headings: t inicio, f de terminacion trabajo, adelanto,retraso,f entrega
+
+
+forall (j in tareas) writeln (j, "\t", round(x(j).sol), "\t",round(x(j).sol+p(j)), "\t",  s(j).sol, "\t", t(j).sol, "\t", d(j))
+end-model

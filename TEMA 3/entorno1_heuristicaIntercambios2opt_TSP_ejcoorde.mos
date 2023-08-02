@@ -1,0 +1,144 @@
+!!!!!!!!!!!!!!!!!!!!!!!!!Solucion de construccion y heuristica intercambio 2 opt
+
+model "TSP-1"
+uses "mmive"
+
+!!!!!!!!!!!!!!!!!!Creamos una funcion para obtener una solucion de construccion
+forward function entorno_cercano(ini:integer):integer
+!!!!!!!!!!!!!!!!!!Heuristica interc 2 opt
+forward procedure heur_2opt
+
+
+declarations
+n:integer
+datos = "tsp_60_1.txt"
+end-declarations
+
+fopen (datos, F_INPUT)
+	read(n)
+	declarations
+		nodos = 1..n
+		dist:array(nodos, nodos)of integer !no redondeamos distancias
+		cx, cy, visitado, s:array(nodos)of integer
+		nvisit, zheur, ini:integer
+		
+	end-declarations
+	
+		forall(i in nodos)read(i, cx(i), cy(i))
+	fclose(F_INPUT)	
+		forall(i,j in nodos)dist(i,j):=round(sqrt((cx(i)-cx(j))^2+(cy(i)-cy(j))^2))
+writeln("cx:", cx)!para ver si estan bien leidos los datos
+
+writeln("Problema TSP, n=", n, ", datos: ", datos)
+writeln("Heuristica del entrono mas cercano")
+
+!!!!!!!!!!!!!!!!!Seleccionamos Nodo!!!!!!!!!!!!!!!!!
+ini:=2
+!!!!!!!!!!!!!!!!Utilizamos la funcion  para obtener solucion con metodos de construccion
+zheur:=entorno_cercano(ini)
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+	
+writeln("Solucion entorno mas proximo: ", zheur)
+
+
+
+!Hacemos la grafica
+
+i1:=IVEaddplot("puntos", IVE_BLACK)
+i2:=IVEaddplot("lineas_entorno", IVE_RED)
+i3:=IVEaddplot("lineas_2opt", IVE_BLUE)
+forall(i in nodos)IVEdrawpoint(i1,cx(i),cy(i))
+forall(i in nodos)IVEdrawlabel(i1,cx(i), cy(i), ""+i)
+forall(i in nodos)IVEdrawline(i2,cx(i),cy(i), cx(s(i)), cy(s(i)))
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+!!!!!!!!!!!!!!!!!!Solucion heuristica 2-opt=======================
+heur_2opt
+writeln("Solucion despues de 2-opt: ", zheur)
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+forall(i in nodos)IVEdrawline(i3,cx(i),cy(i), cx(s(i)), cy(s(i)))
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Creamos función !!!!!!!!!!!!!!!!!!!!!!!!
+
+!!!!!Funcion de la heiristica programada en entorno1-TSP_ejcoorde
+function entorno_cercano(ini:integer):integer
+visitado(ini):=1
+actual:=ini
+nvisit:=1
+zheur:=0
+
+while(nvisit < n)do
+	!encontrar el entorno mas cercano
+	dmin:=999999
+	forall(i in nodos|visitado(i)=0)do
+
+		if (dist(actual, i) < dmin) then
+		dmin:=dist(actual,i)
+		imin:=i
+		end-if
+	end-do
+	visitado(imin):=1
+	s(actual):=imin
+	zheur:=zheur+dist(actual, imin)	
+	nvisit:=nvisit+1
+	actual:=imin
+end-do
+
+!cerrar el ciclo
+zheur:=zheur+dist(actual, ini)
+s(actual):=ini
+returned:=zheur
+end-function
+!!!!!!!!!!!!!!!!!Se acaba la funcion para metodo de construccion!!!!!!!!!!
+
+
+!=============================Intercambios 2 opt
+procedure heur_2opt
+declarations
+	ss:array(nodos) of integer  !copia de s
+	
+end-declarations	
+
+!metodo de busqueda local
+final:=0
+while(final=0)do
+ss:=s   !guardamos copia	
+	mejora_max:=-9999
+	!s(i) sigueinte de i
+	forall(i,j in nodos | i<>j and  j<>s(i))do
+	mejora:=dist(i, s(i))+dist(j, s(j))-(dist(i,j)+dist(s(i), s(j)))
+	if (mejora > mejora_max) then
+		mejora_max:=mejora
+		imax:=i
+		jmax:=j
+	end-if
+	end-do
+	
+	if(mejora_max <=0) then
+		final:=1 ! minimo local
+	else
+		
+		s(imax):=jmax
+		s(ss(imax)):=ss(jmax)
+		!cambiar la direccion desde j hasta s(i)
+		actual:=ss(imax)
+		fin:=0
+		while(fin=0)do
+			t:=ss(actual)
+			s(t):=actual
+			if(t=jmax) then
+				fin:=1
+			else
+				actual:=t
+			end-if
+		end-do
+		zheur:=zheur - mejora_max
+	end-if	
+
+end-do
+	
+end-procedure
+
+end-model

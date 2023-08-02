@@ -1,0 +1,331 @@
+!  	Heuristica de ahorros de Clarke-Wright para TSP, 
+!	comenzando en cada nodo como base, y
+!	aplicando mejora 2-opt
+! 	implementación que no necesita ordenar los ahorros
+
+model " Heuristica de Clarke-Wright para TSP" 
+uses "mmxprs"
+uses "mmsystem"
+uses "mmive"
+
+!forward	function comprobacion_ciclica(s:array(range)of integer):integer
+	
+declarations
+   n:integer
+   archivo_datos = "tsp_60_1.txt"
+   !archivo_datos = "datos/tsp_n21_005.txt"
+   !archivo_datos = "c://datos//tsptw_dumas//n20w20.001.txt"
+   formato_datos = 2	! =1 matriz completa, =2 coordenadas
+end-declarations
+
+fopen(archivo_datos,F_INPUT)
+readln(n)
+
+declarations
+   nodos = 1..n
+   cx:array(nodos)of real		! coordenada x
+   cy:array(nodos)of real		! coordenada y
+   s, ss, smejor:array(nodos)of integer		! array de sucesores
+   
+   dist:array(nodos,nodos) of integer
+   
+   rutas = 1..n-1 !inicialmente tenemos n-1 rutas
+   indr:array(nodos,rutas)of integer
+   ruta_activa:array(rutas)of integer
+   
+   ind:array(nodos,rutas)of integer	! índ(j,k) es el índice del elemento j de la ruta k
+   
+   nra:integer					! número de rutas activas en la solución actual
+   t:integer
+   sig:array(nodos,rutas)of integer ! array de siguientes de cada nodo en cada ruta
+   siga:array(nodos,rutas)of integer ! array de siguientes de cada nodo en cada ruta
+   ini:array(rutas) of integer !Nodo inicial de la ruta
+   fin:array(rutas) of integer !Nodo final de la ruta
+   nv:array(nodos)of integer		! numero de visitas a cada nodo
+   sav:array(nodos,nodos)of integer  ! matriz de savings (ahorros)
+   nsav:integer
+   
+  
+  
+   dist_ruta:array(rutas)of integer
+   dist_total, daux:integer
+   base:integer
+   
+   mejora:array(1..4)of integer
+   copiasig:array(nodos)of integer
+   i1, final, final2, iter, ruta, ic, jact, is, js, t1:integer
+   inicial = 1
+   tini:real
+   
+   b:array(nodos) of integer
+   x:array(nodos,nodos) of mpvar
+   y:array(nodos,nodos) of mpvar   
+   tiempo_calculo = -60
+   aplicar_bb = 0 !1 se resuelve solucion optima
+end-declarations
+
+if(formato_datos=1)then   
+     forall(i,j in nodos)read(dist(i,j))
+elif(formato_datos=2)then
+     forall(j in nodos)readln(j,cx(j),cy(j))
+     !forall(j in nodos)writeln(j,"\t",cx(j),"\t",cy(j))
+     forall(i,j in nodos|i<>j)dist(i,j):=round(sqrt((cx(i)-cx(j))^2+(cy(i)-cy(j))^2))
+end-if
+fclose(F_INPUT)
+!====================================== DATOS =============================
+writeln("Problema TSP, \nn = ",n)
+writeln("Datos: ",archivo_datos)
+
+!================================= MODELO ==================================
+if(aplicar_bb =1)then !si 0 no se resuelve el modelo
+	objetivo:=sum(i,j in nodos|i<>j) dist(i,j)*x(i,j)
+
+	forall(i,j in nodos|i<>j)x(i,j)is_binary
+
+	forall(i in nodos)b(i):=-1
+	b(1):=n-1
+	! Determinamos las restricciones
+	forall(i in nodos)res_1(i):=sum(j in nodos|i<>j)x(i,j)=1
+
+	forall(j in nodos)res_2(j):=sum(i in nodos|i<>j)x(i,j)=1
+
+	! A~nadimos las restricciones del Problema Auxiliar de Redes
+	forall(i in nodos)res_3(i):=sum(j in nodos|i<>j)y(i,j)-sum(j in nodos|i<>j)y(j,i)=b(i)
+
+	forall(i,j in nodos|i<>j)res_4(i,j):=y(i,j)<=(n-1)*x(i,j)
+
+	!================================== OPTIMIZACIÓN ==================================
+
+	writeln("\nProblema TSP, n = ",n,", datos: ",archivo_datos)
+
+	!exportprob(EP_MIN,"",objetivo)
+
+	starttime:=gettime
+
+	setparam("XPRS_MAXTIME",tiempo_calculo)
+	minimize(objetivo)
+
+	nvar:= getparam("XPRS_cols") 
+	nres:= getparam("XPRS_rows") 
+	writeln("Numero de variables: ",nvar,", numero de restricciones: ",nres)
+	mip_status:= getparam("XPRS_mipstatus")
+	mejor_cota:= getparam("XPRS_bestbound")
+	nodos_BB:=getparam("XPRS_nodes")
+	if(getobjval<>0)then
+       hueco_final:= 100*(getobjval-mejor_cota)/getobjval
+	end-if
+	writeln("\n***Solucion entera")
+	writeln("\nmip_status = ",mip_status)
+	writeln("Valor objetivo :",getobjval)
+	writeln("Mejor cota= ",mejor_cota)
+	writeln("Hueco final= ",strfmt(hueco_final,6,2))
+	writeln("Nodos examinados = ",nodos_BB) 
+	writeln("Tiempo en segundos = ",gettime-starttime,"\n\n")
+end-if
+(!
+writeln("\nMatriz de distancias:\n")
+forall(i in nodos)do
+  writeln
+  forall(j in nodos)write(dist(i,j),"\t")
+end-do
+!)
+
+!=================Algoritmo de Clarke-Wright para TSP =======================
+writeln("\Heuristica de Clarke-Wright con base en cada nodo")
+writeln("Implementacion 2, sin ordenacion de los ahorros")
+tini:=gettime
+zmejor:= 99999
+forall(f in nodos)do
+	! Solución inicial (n-1 rutas)
+	base:=f
+	nra:=0 !numero de rutas activas
+	dsol:=0
+	! solución inicial con n-1 rutas
+	forall(i in nodos|i<>base)do
+   		nra:=nra+1
+   		sig(i,nra):=base !voy a cada nodo
+   		sig(base,nra):=i !vuelvo a cad nodo
+   		ruta_activa(nra):=1
+ 
+   		ini(nra):=i
+   		fin(nra):=i
+   		dist_ruta(nra):=dist(base,i)+dist(i,base)
+   		dsol:=dsol+dist(base,i)+dist(i,base)
+	end-do
+
+	!writeln("\nSolucion inicial, dist = ",dsol,", rutas activas: ",nra)
+	! Cálculo de la matriz de ahorros (savings)
+
+	forall(i,j in nodos|i<>base and j<>base and i<>j)sav(i,j):=
+		dist(i,base)+dist(base,j)-dist(i,j)
+
+
+	while(nra > 1)do !mientras el numero de rutas activas sea mayor que 1
+   		mejora_max:=-999999
+   		forall(k1, k2 in rutas|k1<>k2 and ruta_activa(k1)=1 and ruta_activa(k2)=1)do
+   			
+   			mejora(1):=sav(ini(k1),fin(k2))	! caso 1
+   			mejora(2):=sav(fin(k1),ini(k2))	! caso 2
+   			mejora(3):=sav(ini(k1),ini(k2))	! caso 3
+   			mejora(4):=sav(fin(k1),fin(k2))	! caso 4
+   			
+   			aux:=-9999
+   			forall(c in 1..4)do !calculo el caso de maxima mejora
+   				if(mejora(c)>aux)then
+   					aux:=mejora(c)
+   					caux:=c				! caso de máxima mejora
+   				end-if
+   			end-do
+   			
+   			mejora_act:=aux 			
+   			if(mejora_act > mejora_max)then
+   				mejora_max:=mejora_act
+   				k1max:=k1
+   				k2max:=k2
+   				cmax:=caux		! aquí guardo el caso que se da en el máximo
+   			end-if
+   		end-do
+   		!writeln("nra = ",nra,", mejora_max = ",mejora_max,", cmax = ",cmax)
+   		! Mezcla de rutas en cada caso
+   		
+   		if(cmax = 1)then		! caso 1: (caso facil i ultima de una ruta y j el primero de otra, no hay cambios des entido)
+   		   			is:=fin(k2max)
+   			js:=ini(k1max)
+     		ruta_activa(k1max):=0 !hay que poner inactiva una de las rutas
+       		sig(is,k2max):=js
+       		jact:=js
+       		while(jact<>fin(k1max))do
+         		sig(jact,k2max):=sig(jact,k1max)
+         		jact:=sig(jact,k1max)
+       		end-do 
+       		fin(k2max):=fin(k1max)
+       		sig(fin(k2max),k2max):=base
+       		nra:=nra-1
+   			
+       	elif(cmax = 2)then		! caso 2:
+       		is:=ini(k2max)
+       		js:=fin(k1max)
+   			ruta_activa(k2max):=0
+       		sig(js,k1max):=is
+       		jact:=is
+       		while(jact<>fin(k2max))do
+         		sig(jact,k1max):=sig(jact,k2max)
+         		jact:=sig(jact,k2max)
+       		end-do 
+       		fin(k1max):=fin(k2max)
+       		sig(fin(k1max),k1max):=base
+       		nra:=nra-1
+       	!	
+       	elif(cmax = 3)then		! caso 3: (hay que cambiar sentido)
+       		js:=ini(k2max)
+       		is:=ini(k1max)
+       		ruta_activa(k1max):=0
+       		sig(is,k2max):=js
+       		!forall(i in nodos)copiasig(i):=sig(i,k1
+       		!cambiar el sentido en k1max desde is hasta la base
+       		jact:=is
+       		!temp:=sig(jact,k1max)
+       		while(jact<>fin(k1max))do
+       			t:=sig(jact,k1max)
+       			!temp:=sig(t,k1max)
+       			sig(t,k2max):=jact
+       			jact:=t
+       		end-do 
+       		ini(k2max):=fin(k1max)
+       		sig(base,k2max):=ini(k2max)
+       		nra:=nra-1
+   		!
+       	elif(cmax= 4)then		! caso 4: (hay que cambiar sentido)
+       		js:=fin(k1max)
+       		is:=fin(k2max)
+       		ruta_activa(k2max):=0
+       		sig(js,k1max):=is
+       		! se cambia el sentodo desde b  hasta is
+       		jact:=base
+       		!temp:=sig(jact,k2max)
+       		while(jact<>fin(k2max))do
+       			t:=sig(jact,k2max)
+       			sig(t,k1max):=jact
+         		jact:=t
+       		end-do 
+       		fin(k1max):=ini(k2max)
+       		sig(ini(k2max),k1max):=base
+       		nra:=nra-1  
+       	!)
+       	else
+       		writeln("error, cmax = ",cmax)
+   		end-if
+   			
+   	    !if(nra = 1)then final:=1;end-if
+      
+	end-do	! final de while
+
+
+	!===================== Solución final de la heurística de Clarke and Wright ===================
+	!writeln("\nSolucion final de la heuristica de Clarke and Wright:")
+	!writeln("Numero de ahorros positivos: ",nsav)
+	!writeln("Numero de ahorros usados: ",t)
+	!writeln("Recorrido:")
+	!dist_total:=0  ! distancia total de la ruta
+	forall(k in rutas)if(ruta_activa(k)=1)then k1:=k;end-if
+	forall(i in nodos)s(i):=sig(i,k1)
+	!writeln("s = ",s)
+	! comprobacion del ciclo:
+	!forall(i in nodos)nv(i):=0
+	!forall(i in nodos)	nv(s(i)):=nv(s(i))+1
+	!forall(i in nodos)
+	!	if(nv(i)<>1)then writeln("nodo ",i," visitado ",nv(i)," veces");end-if
+	
+	!err:=comprobacion_ciclica(s)
+	!if(err<>0)then writeln("Ciclo no valido");end-if
+	(! array de siguientes, distancia total y recorrido. 1ª forma
+	s(base):=ini(k1)
+	!write("\n",base,"-",ini(k1))
+	dist_total:=dist_total+dist(base,ini(k1))
+	jact:=ini(k1)
+	while(jact<>fin(k1))do
+		s(jact):=sig(jact,k1)
+ 		dist_total:=dist_total+dist(jact, s(jact))
+    	jact:=sig(jact,k1)
+    	!write("-",jact)    	
+	end-do
+	s(fin(k1)):=base
+	dist_total:=dist_total+dist(fin(k1),base)
+	!write("-",base)
+	!writeln("\ndistancia total = ",dist_total)
+	!)
+
+	!writeln("\n\ni\tj\tdist\n")
+	!forall(i in nodos)writeln(i,"\t",s(i),"\t",dist(i,s(i)))
+	zheur:=sum(i in nodos)dist(i,s(i))
+	write("\nbase: ",base,", zheur = ",zheur)
+	
+	
+	dist_mejorada:=sum(i in nodos)dist(i,s(i))
+	write(" --> ",dist_mejorada) !vemos la distancia mejorada
+	
+	if(dist_mejorada < zmejor)then
+	!if(zheur < zmejor)then
+			zmejor:=dist_mejorada
+			smejor:=s
+	end-if
+	
+end-do	! final de forall(f in nodos)
+
+writeln("\nzmejor = ",zmejor,", tiempo total = ",gettime-tini)
+
+!===================  Gráfica final ======================
+if(formato_datos = 2)then
+	id1:=IVEaddplot("puntos",IVE_BLACK)
+	id2:=IVEaddplot("tramos",IVE_RED)
+	forall(i in nodos)do
+		IVEdrawpoint(id1,cx(i),cy(i))
+		IVEdrawline(id2,cx(i),cy(i),cx(smejor(i)),cy(smejor(i)))
+	end-do
+end-if
+
+
+
+end-model
+
+

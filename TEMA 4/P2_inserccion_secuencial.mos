@@ -1,0 +1,287 @@
+! Heurística de inserción secuencial para CVRP
+! Algoritmo de Mole-Jamenson
+model "Mole-Jamenson"
+
+uses "mmsystem"
+uses "mmive"
+
+
+forward procedure dibujar_rutas(nr:integer, nnr:array(range)of integer, indr:array(range,range)of integer)
+
+declarations
+   	n:integer
+   	m:integer
+   	
+   	archivo_datos = "E072-04f.dat"
+   
+   	
+	formato_datos = 2	! =1 datos de distancias, =2 datos con coordenadas
+	nombre:string
+end-declarations
+
+
+fopen(archivo_datos,F_INPUT)
+
+if(formato_datos = 1)then
+	read(n)
+	read(m)
+elif(formato_datos = 2)then
+	read(nombre)
+	read(n)
+	read(m)
+end-if
+declarations
+	puntos = 1..n
+	
+	cx:array(puntos) of integer
+	cy:array(puntos) of integer
+	dist:array(puntos,puntos) of real
+	dem:array(puntos) of integer
+	cap:integer
+	rutas:range
+	dist_ruta:array(rutas)of real
+	carga:array(rutas)of integer
+	nnr:array(rutas)of integer
+	indr:array(range,rutas)of integer
+	pos:array(puntos)of integer
+	visitado:array(puntos)of integer
+	nvis:integer
+	base = 1
+	alpha:array(puntos,puntos)of real
+	beta:array(puntos)of real
+			
+	
+	ik, jaux,  nn:integer
+	dist_total, daux:real
+	
+	lambda = 1.
+	nu = 1.2
+	nodo_inicial = 1		! =1 el más alejado, =2 el máas cercano, = 3 aleatorio
+	grafico = 2				! =1 para la solucion inicial, =2 para la solucion despues de 2opt
+end-declarations
+
+if(formato_datos=1)then
+  	forall(i in puntos)do
+  		read(ik)
+  		read(dem(i))
+	end-do
+	forall(i in puntos,j in puntos)read(dist(i,j)) 
+	read(cap)
+	
+elif(formato_datos=2)then
+  	read(cap)
+  	forall(i in puntos)read(i,cx(i),cy(i))
+  	forall(i in puntos)read(i,dem(i))
+  	forall(i,j in puntos|i<>j)dist(i,j):=sqrt((cx(i)-cx(j))^2+(cy(i)-cy(j))^2)
+end-if	
+fclose(F_INPUT)
+
+
+forall(i in puntos)dist(i,i):= 0.
+
+writeln("Problema de routing con capacidades  CVRP, \nn = ",n,", m = ",m)
+writeln("Datos: ",archivo_datos)
+
+
+(!
+writeln("\nMatriz de distancias:\n")
+forall(i in puntos)do
+  writeln
+  forall(j in puntos)write(dist(i,j),"\t")
+end-do
+writeln("\nDemandas: ")
+forall(i in puntos)writeln(dem(i))
+!)
+
+writeln("\nCapacidad = ",cap)
+dem_total:=sum(i in puntos)dem(i)
+writeln("Minimo numero de vehiculos: ",ceil(dem_total/cap))
+t1:=gettime
+writeln("\n\n(1) Algoritmo de Mole-Jamenson para lambda = ",lambda," y nu = ",nu)
+writeln
+tiempo1:=gettime
+!========= Algoritmo de Mole-Jamenson ===================================
+! Inicializaciones:
+
+dist_total:=0.
+nvis:=1
+visitado(1):=1
+r:=0
+
+while(nvis < n)do
+	! inicio una ruta con el nodo más alejado, el más cercano o aleatorio 
+	r:=r+1
+	if(nodo_inicial =1)then
+	   daux:=-9999.9
+	   forall(j in puntos|visitado(j)=0)do
+	      if(dist(base,j)>daux)then
+	          daux:=dist(base,j)
+	          jaux:=j
+	      end-if
+	   end-do	
+	elif(nodo_inicial = 2)then
+	   daux:=9999.9
+	   forall(j in puntos|visitado(j)=0)do
+	      if(dist(base,j)<daux)then
+	          daux:=dist(1,j)
+	          jaux:=j
+	      end-if
+	   end-do
+	elif(nodo_inicial=3)then
+	  novis:=0
+	  forall(j in puntos|visitado(j)=0)do
+	    novis:=novis+1
+	    indnovis(novis):=j
+	  end-do
+	  jaux:=indnovis(ceil(random*novis))!Elegir uno al azar entre los no visitados
+	end-if
+	visitado(jaux):=1
+	nvis:=nvis+1
+	carga(r):=dem(jaux)
+	nnr(r):=2
+	indr(1,r):=base
+	indr(2,r):=jaux
+	dist_ruta(r):=dist(base,jaux)+dist(jaux,base)!Cuidado con confundir demanda y carga
+	
+	! se van insertando puntos en la ruta
+	ruta_activa:=1
+	while(ruta_activa=1)do
+		n2:=0
+   	    forall(k in puntos|visitado(k)=0 and carga(r)+dem(k)<=cap)n2:=n2+1!contador de no visitados y factibles
+   	    
+   	    if(n2 = 0)then
+   	       ruta_activa:= 0   
+   	       !write("\nRuta ",r,", dist = ",dist_ruta(r),", carga = ",carga(r),", puntos: ") 
+   	       !forall(i in 1..nnr(r))write(indr(i,r),"-")
+   	       !write("1")
+   	       ! Aquí se mejoraría la ruta de alguna forma	       
+   	    else
+	
+   	      ! calculo C1=alpha(i,k) y la posición mejor pos(k)
+   	      forall(k in puntos|visitado(k)=0 and carga(r)+dem(k)<=cap)do
+   		     forall(i in 1..nnr(r)-1)alpha(i,k):=
+   	         dist(indr(i,r),k)+dist(k,indr(i+1,r))-lambda*dist(indr(i,r),indr(i+1,r))
+   	         !writeln("ruta r = ",r,", nnr(r) = ",nnr(r)) 
+   		     alpha(nnr(r),k):= dist(indr(nnr(r),r),k)+dist(k,base)-lambda*dist(indr(nnr(r),r),base)!para ultima posicion
+   	      end-do
+   		  !Buscamos el argumento minimo
+   	      forall(k in puntos|visitado(k)=0 and carga(r)+dem(k)<=cap)do
+   	         daux:=9999.9
+   	         forall(i in 1..nnr(r)-1)do
+   	             if(alpha(i,k)<daux)then
+   	                 daux:=alpha(i,k)
+   	                 ik:=i
+   	             end-if
+   	         end-do
+   	         if(alpha(nnr(r),k)<daux)then!para ultima posicion
+   	            daux:=alpha(nnr(r),k)
+   	            ik:= nnr(r)
+   	         end-if
+   	    
+   	         pos(k):=ik!para cada cliente no visitado almaceno posicion donde C1 es minimo
+   	      end-do
+   	  	  !Calculo Beta=C2, criterio de urgencia
+   	      forall(k in puntos|visitado(k)=0 and carga(r)+dem(k)<=cap)
+   	         beta(k):=nu*dist(base,k)-alpha(pos(k),k)!en las posiciones donde C1 es minimo
+   	         
+   	      ! inserto en la ruta actual el nodo con beta(k) máximo
+   	      betamax:=-9999.9
+   	      forall(k in puntos|visitado(k)=0 and carga(r)+dem(k)<=cap)do
+   	        if(beta(k)>betamax)then
+   	            betamax:=beta(k)
+   	            ki:=k
+   	        end-if
+   	      end-do
+   	    
+   	     ! inserto el nodo ki en su posición
+   	     nn:=nnr(r)
+   	     forall(i in 1..nnr(r))copia(i):=indr(i,r)
+   	    
+   	     nnr(r):=nnr(r)+1!va a haber un nodo mas
+   	     indr(pos(ki)+1,r):=ki!entre v_i y v_{i+1}
+   	     if(pos(ki)<nn)then
+   	        forall(i in pos(ki)+1..nn)indr(1+i,r):=copia(i)
+   	     end-if
+   	     !Actualizamos
+   	     visitado(ki):=1
+   	     nvis:=nvis+1
+   	     carga(r):=carga(r)+dem(ki)
+   	     
+   	     if(pos(ki)<nn)then
+   	        dist_ruta(r):=dist_ruta(r)+ 
+   	     	dist(indr(pos(ki),r),indr(pos(ki)+1,r))+
+   	     	dist(indr(pos(ki)+1,r),indr(pos(ki)+2,r))-
+   	     	dist(indr(pos(ki),r),indr(pos(ki)+2,r))
+   	     else
+   	     	dist_ruta(r):=dist_ruta(r)+      	
+   	     	dist(indr(pos(ki),r),ki)+
+   	     	dist(ki,base)-
+   	     	dist(indr(pos(ki),r),base)
+   	     end-if
+
+   	    end-if
+   	    
+	end-do  ! final de while(ruta_activa=1)
+	
+	dist_total:=dist_total+dist_ruta(r)
+   	
+end-do  ! final de while(nvis < n)
+nr:=r
+
+
+!================= Salida final ==========================
+
+dist_total:=sum(k in 1..nr)dist_ruta(k)
+
+writeln("Numero de rutas: ",nr,". Rutas:")
+writeln("\nr\tnn\tdist\tcarga\tpuntos\n")
+forall(k in 1..nr)do
+   write("\n",k,"\t",nnr(k),"\t",strfmt(dist_ruta(k),6,2),"\t",carga(k),"\t")
+   forall(i in 1..nnr(k))write(indr(i,k),"-")
+   write("1")
+end-do
+
+if(grafico = 2 and formato_datos = 2)then
+	dibujar_rutas(nr, nnr, indr)
+end-if
+writeln("\n\nDistancia total = ",dist_total)
+writeln("Tiempo = ",gettime-t1)
+(!
+forall(k in 1..nr)do
+	nn:=nnr(k)
+	forall(j in 1..nn)p(j):=indr(j,k)
+	write("\n",nn,",p:")
+	forall(i in 1..nn)write(p(i),"-")
+end-do
+!)
+	
+!================================================================
+
+!====================================================================
+procedure dibujar_rutas(nr:integer, nnr:array(range)of integer, indr:array(range,range)of integer)
+	
+	id1:=IVEaddplot("puntos",IVE_BLACK)
+	forall(j in puntos)IVEdrawpoint(id1,cx(j),cy(j))
+	
+	
+	colores:={IVE_BLUE, IVE_CYAN, IVE_GREEN, IVE_MAGENTA, IVE_RED, IVE_WHITE, IVE_YELLOW}
+	ncolor:=1
+	forall(k in 1..nr) do
+		id(k):=IVEaddplot("ruta",colores(ncolor))
+		ncolor:=ncolor+1
+		if(ncolor = 7) then
+			ncolor:=1
+		end-if
+	end-do
+	
+	
+	forall(k in 1..nr)do
+		forall(j in 1..nnr(k)-1)IVEdrawline(id(k),cx(indr(j,k)),cy(indr(j,k)),cx(indr(j+1,k)),cy(indr(j+1,k)))
+		IVEdrawline(id(k),cx(indr(nnr(k),k)),cy(indr(nnr(k),k)),cx(indr(1,k)),cy(indr(1,k)))
+	end-do
+	
+end-procedure
+
+
+
+end-model   

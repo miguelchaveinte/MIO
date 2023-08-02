@@ -1,0 +1,62 @@
+! Practica 2 Scheduling
+model P2_F1
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+
+
+!sample declarations section
+declarations
+	n = 6
+	tareas = 1..n
+	p,d,w : array(tareas) of integer
+	s,t,x : array(tareas) of mpvar!s->adelanto; t->retraso
+	y : array(tareas,tareas) of mpvar
+	lmax:mpvar
+end-declarations
+
+!LO TENGO EN FOTO DIA 8/5
+
+! Incluimos los datos directamente
+! Incluimos los datos directamente
+p :: [2,3,4,3,2,1]; 
+d :: [3,6,9,7,11,7];
+
+!Necesito definir la cota superior para la F1
+M := sum(j in tareas)(p(j))!+max(r_j), que en este caso no hay
+
+!Defino la funcion objetivo
+!minimizar el retraso maximo
+obj:=lmax
+
+!restricciones relativas a la fecha de entrega (linealizacion)
+forall(j in tareas) lini(j):= lmax>=x(j)+p(j)-d(j)
+
+! Restricciones relativas al orden de los trabajos
+forall(j,k in tareas |j<k) fd1(j,k):=x(j)+p(j)-x(k)<=M*(1-y(j,k))
+
+forall(j,k in tareas |j<k) fd2(j,k):=x(k)+p(k)-x(j)<=M*y(j,k)
+
+!restricciones de precedencia
+prec1:= x(1)+p(1)<= x(2) 
+prec2:= x(2)+p(2)<= x(3)
+prec4:= x(4)+p(4)<= x(5)
+prec5:= x(4)+p(4)<= x(6)
+
+(!
+o bien y(1,2)=1
+o bien y(2,3)=1
+o bien y(4,5)=1
+o bien y(4,6)=1
+!)
+
+!restricciones de las variables
+forall(j in tareas)x(j)>=0
+forall(j,k in tareas|j<k)y(j,k) is_binary
+
+minimize(obj)
+writeln
+writeln("Lmax=", obj.sol)
+writeln ("j\tx\tC\ts\tr\td\n")!headings: t inicio, f de terminacion trabajo, adelanto,retraso,f entrega
+
+
+forall (j in tareas) writeln (j, "\t", round(x(j).sol), "\t",round(x(j).sol+p(j)), "\t",  s(j).sol, "\t", t(j).sol, "\t", d(j))
+end-model

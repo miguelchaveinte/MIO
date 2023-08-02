@@ -1,0 +1,60 @@
+model ModelName
+uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+
+declarations
+  m,n:integer
+  archivo_datos = "datsec2_5grafos.dat"
+end-declarations
+fopen(archivo_datos,F_INPUT)
+	read(n)
+	m:=n
+
+declarations
+	pdemanda= 1..m
+	pservicio = 1..n
+	dist:array(pdemanda,pservicio)of real
+	costo, col:array(pservicio)of integer
+	a:array(pdemanda,pservicio)of integer
+	dc = 11  ! distancia cubrimiento
+	x:array(pservicio)of mpvar
+end-declarations
+	forall(i in pdemanda,j in pservicio)read(dist(i,j))
+		forall(i in pdemanda,j in pservicio)do
+		if(dist(i,j)<=dc)then
+			a(i,j):=1
+		else
+			a(i,j):=0
+		end-if
+	end-do
+	forall(j in pservicio)costo(j):=1
+
+	
+writeln("Problema Set Covering, m = ",m,", n = ",n)
+writeln("Datos: ",archivo_datos)
+writeln("dc = ",dc)
+! Modelo:
+costo_total:=sum(j in pservicio)costo(j)*x(j)
+
+forall(i in pdemanda)rescub(i):=
+	sum(j in pservicio)a(i,j)*x(j)>=1
+	
+forall(j in pservicio)x(j)is_binary
+exportprob(EP_MIN,"",costo_total)
+minimize(costo_total)
+
+writeln("Costo minimo: ",getobjval)
+writeln("Puntos abiertos: ")
+forall(j in pservicio|x(j).sol>=0.99)write(j,"\t")
+writeln("")
+
+! ejercicio mostrar en la salida las ciudades atendidas por las ciudades escogidas
+!para instalar el servicio
+
+!Salidas
+forall (i in pdemanda, j in pservicio) do
+if (a(i,j)=1 and x(j).sol>0.9999) then
+writeln("El municipio ", i , " es atendido por ambulancia localizada en ", j)
+end-if
+end-do
+
+end-model
